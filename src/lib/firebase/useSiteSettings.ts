@@ -5,15 +5,17 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import {
   defaultSiteSettings,
+  seedSiteSettings,
   type SiteSettings,
 } from "@/data/siteContent";
 
 export function useSiteSettings() {
-  const [settings, setSettings] = useState<SiteSettings>(defaultSiteSettings);
+  const [settings, setSettings] = useState<SiteSettings>(seedSiteSettings);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!db) {
+      setSettings(seedSiteSettings);
       setLoading(false);
       return;
     }
@@ -22,7 +24,7 @@ export function useSiteSettings() {
       ref,
       (snap) => {
         const data = snap.data() as Partial<SiteSettings> | undefined;
-        const merged = { ...defaultSiteSettings, ...(data || {}) } as Record<
+        const merged = { ...seedSiteSettings, ...(data || {}) } as Record<
           string,
           unknown
         >;
