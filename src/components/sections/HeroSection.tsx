@@ -7,8 +7,8 @@ import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
 export default function HeroSection() {
   const { settings } = useSiteSettings();
   return (
-    <section className="relative h-screen flex items-center justify-center overflow-hidden">
-      <div className="absolute inset-0 z-0">
+    <section className="relative h-screen flex items-center justify-center overflow-hidden bg-[#1b3b83]">
+      <div className="absolute inset-0 z-0 bg-[#1b3b83]">
         <img
           src={HERO_IMAGE_URL}
           alt="Worship Background"
