@@ -1,0 +1,166 @@
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import {
+  CalendarDays,
+  FileText,
+  Link2,
+  LogOut,
+  ShieldCheck,
+  Megaphone,
+  Settings,
+  Users,
+} from "lucide-react";
+import { useAuth } from "@/components/providers/AuthProvider";
+
+export default function AdminPage() {
+  const router = useRouter();
+  const { isAuthenticated, isReady, logout } = useAuth();
+
+  useEffect(() => {
+    if (isReady && !isAuthenticated) {
+      router.replace("/?login=1");
+    }
+  }, [isReady, isAuthenticated, router]);
+
+  if (!isReady) {
+    return <div className="min-h-screen pb-20 bg-slate-50"></div>;
+  }
+
+  if (!isAuthenticated) {
+    return null;
+  }
+
+  return (
+    <main className="min-h-screen pb-20 px-4 bg-slate-50 animate-fade-in-up">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">
+              Painel Administrativo
+            </h1>
+            <p className="text-slate-500">Bem-vindo de volta, Administrador.</p>
+          </div>
+          <button
+            onClick={async () => {
+              await logout();
+              router.push("/");
+            }}
+            className="px-5 py-2.5 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all flex items-center gap-2"
+          >
+            <LogOut size={18} /> Sair
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+          <Link
+            href="/admin/noticias"
+            className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow cursor-pointer group"
+          >
+            <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+              <FileText size={24} />
+            </div>
+            <h3 className="font-bold text-lg text-slate-800">
+              Gerenciar Notícias
+            </h3>
+            <p className="text-sm text-slate-500 mt-2">
+              Publicar ou editar posts do mural.
+            </p>
+          </Link>
+
+          <Link
+            href="/admin/agenda"
+            className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow cursor-pointer group"
+          >
+            <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors">
+              <CalendarDays size={24} />
+            </div>
+            <h3 className="font-bold text-lg text-slate-800">
+              Agenda de Cultos
+            </h3>
+            <p className="text-sm text-slate-500 mt-2">
+              Atualizar horários e eventos.
+            </p>
+          </Link>
+
+          <Link
+            href="/admin/ministerios"
+            className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow cursor-pointer group"
+          >
+            <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+              <Megaphone size={24} />
+            </div>
+            <h3 className="font-bold text-lg text-slate-800">
+              Ministérios
+            </h3>
+            <p className="text-sm text-slate-500 mt-2">
+              Gerencie ministérios e departamentos.
+            </p>
+          </Link>
+
+          <Link
+            href="/admin/diretoria"
+            className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow cursor-pointer group"
+          >
+            <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-sky-600 group-hover:text-white transition-colors">
+              <ShieldCheck size={24} />
+            </div>
+            <h3 className="font-bold text-lg text-slate-800">
+              Diretoria Executiva
+            </h3>
+            <p className="text-sm text-slate-500 mt-2">
+              Cadastre e edite os membros da diretoria.
+            </p>
+          </Link>
+
+          <Link
+            href="/admin/usuarios"
+            className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow cursor-pointer group"
+          >
+            <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-orange-600 group-hover:text-white transition-colors">
+              <Users size={24} />
+            </div>
+            <h3 className="font-bold text-lg text-slate-800">Usuários</h3>
+            <p className="text-sm text-slate-500 mt-2">
+              Gerencie usuários do Firebase Auth.
+            </p>
+          </Link>
+
+          <Link
+            href="/admin/links"
+            className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow cursor-pointer group"
+          >
+            <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+              <Link2 size={24} />
+            </div>
+            <h3 className="font-bold text-lg text-slate-800">Links</h3>
+            <p className="text-sm text-slate-500 mt-2">
+              Atualizar os links da página de links.
+            </p>
+          </Link>
+
+          <Link
+            href="/admin/configuracoes"
+            className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow cursor-pointer group"
+          >
+            <div className="w-12 h-12 bg-slate-100 text-slate-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-slate-800 group-hover:text-white transition-colors">
+              <Settings size={24} />
+            </div>
+            <h3 className="font-bold text-lg text-slate-800">Configurações</h3>
+            <p className="text-sm text-slate-500 mt-2">
+              Ajustes gerais do site.
+            </p>
+          </Link>
+        </div>
+
+        <div className="mt-10 bg-blue-50 border border-blue-100 rounded-2xl p-8 text-center">
+          <p className="text-blue-800 font-medium">
+            Funcionalidades em desenvolvimento do painel.
+          </p>
+        </div>
+      </div>
+    </main>
+  );
+}
