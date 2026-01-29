@@ -15,6 +15,7 @@ import {
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { useToast } from "@/components/ui/Toast";
 import { db, storage } from "@/lib/firebase/client";
 
 type BoardMemberDoc = {
@@ -56,6 +57,7 @@ const defaultPhoto = "/logo.png";
 export default function AdminBoardPage() {
   const router = useRouter();
   const { isAuthenticated, isReady } = useAuth();
+  const { pushToast } = useToast();
   const [items, setItems] = useState<BoardMemberDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -99,7 +101,17 @@ export default function AdminBoardPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!db || !canSubmit) return;
+    if (!db || !canSubmit) {
+      if (!db) {
+        pushToast({
+          type: "error",
+          title: "Firebase não configurado",
+          description: "Não foi possível salvar o membro da diretoria.",
+        });
+      }
+      return;
+    }
+    const isEditing = Boolean(editingId);
     setSaving(true);
     const payload: Omit<BoardMemberDoc, "id"> = {
       role: form.role.trim(),
@@ -117,6 +129,19 @@ export default function AdminBoardPage() {
       }
       setForm(emptyForm);
       setEditingId(null);
+      pushToast({
+        type: "success",
+        title: isEditing ? "Membro atualizado" : "Membro adicionado",
+      });
+    } catch (error) {
+      pushToast({
+        type: "error",
+        title: isEditing
+          ? "Falha ao atualizar membro"
+          : "Falha ao adicionar membro",
+        description:
+          error instanceof Error ? error.message : "Tente novamente em instantes.",
+      });
     } finally {
       setSaving(false);
     }
@@ -140,6 +165,11 @@ export default function AdminBoardPage() {
   const uploadPhoto = async (file: File) => {
     if (!storage) {
       setUploadError("Storage não configurado.");
+      pushToast({
+        type: "error",
+        title: "Storage não configurado",
+        description: "Não foi possível enviar a foto.",
+      });
       return;
     }
     setUploading(true);
@@ -153,18 +183,48 @@ export default function AdminBoardPage() {
       await uploadBytes(fileRef, file, { contentType: file.type });
       const url = await getDownloadURL(fileRef);
       setForm((prev) => ({ ...prev, photo: url }));
+      pushToast({
+        type: "success",
+        title: "Foto enviada",
+      });
     } catch (error) {
-      setUploadError("Falha ao enviar a imagem.");
+      setUploadError("Falha ao enviar a foto.");
+      pushToast({
+        type: "error",
+        title: "Falha ao enviar a foto",
+        description:
+          error instanceof Error ? error.message : "Tente novamente em instantes.",
+      });
     } finally {
       setUploading(false);
     }
   };
 
   const handleDelete = async (itemId: string) => {
-    if (!db) return;
+    if (!db) {
+      pushToast({
+        type: "error",
+        title: "Firebase não configurado",
+        description: "Não foi possível excluir o membro.",
+      });
+      return;
+    }
     const ok = window.confirm("Deseja excluir este membro da diretoria?");
     if (!ok) return;
-    await deleteDoc(doc(db, "boardMembers", itemId));
+    try {
+      await deleteDoc(doc(db, "boardMembers", itemId));
+      pushToast({
+        type: "success",
+        title: "Membro removido",
+      });
+    } catch (error) {
+      pushToast({
+        type: "error",
+        title: "Falha ao excluir membro",
+        description:
+          error instanceof Error ? error.message : "Tente novamente em instantes.",
+      });
+    }
   };
 
   if (!isReady) {
@@ -287,7 +347,7 @@ export default function AdminBoardPage() {
                       htmlFor="board-photo-upload"
                       className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-medium shadow-sm hover:bg-slate-50 transition cursor-pointer"
                     >
-                      Enviar imagem
+                      Enviar foto
                     </label>
                     {uploading ? (
                       <span className="text-xs text-slate-500">

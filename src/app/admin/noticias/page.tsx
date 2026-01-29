@@ -14,10 +14,18 @@ import {
   serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { useAuth } from "@/components/providers/AuthProvider";
-import { db } from "@/lib/firebase/client";
+import { useToast } from "@/components/ui/Toast";
+import { db, storage } from "@/lib/firebase/client";
 
-const IMAGE_OPTIONS = ["/capa.png", "/logo.png", "/dark.svg", "/light.svg"];
+const IMAGE_OPTIONS = [
+  { label: "Capa padrão", value: "/capa.png" },
+  { label: "Logo padrão", value: "/logo.png" },
+  { label: "Dark", value: "/dark.svg" },
+  { label: "Light", value: "/light.svg" },
+];
+const defaultImage = "/capa.png";
 
 type NewsPost = {
   id: string;
@@ -33,7 +41,7 @@ const emptyForm = {
   title: "",
   excerpt: "",
   content: "",
-  image: "/capa.png",
+  image: defaultImage,
 };
 
 const formatDate = (value?: NewsPost["createdAt"]) => {
@@ -46,14 +54,26 @@ const formatDate = (value?: NewsPost["createdAt"]) => {
   return `${day}/${month}/${year}`;
 };
 
+const safeImage = (image?: string) => {
+  if (!image) return "";
+  if (image.startsWith("http://") || image.startsWith("https://")) {
+    return image;
+  }
+  if (!image.startsWith("/")) return "";
+  return encodeURI(image);
+};
+
 export default function AdminNewsPage() {
   const router = useRouter();
   const { isAuthenticated, isReady } = useAuth();
+  const { pushToast } = useToast();
   const [posts, setPosts] = useState<NewsPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
@@ -90,7 +110,17 @@ export default function AdminNewsPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!db || !canSubmit) return;
+    if (!db || !canSubmit) {
+      if (!db) {
+        pushToast({
+          type: "error",
+          title: "Firebase não configurado",
+          description: "Não foi possível salvar a notícia.",
+        });
+      }
+      return;
+    }
+    const isEditing = Boolean(editingId);
     setSaving(true);
 
     try {
@@ -114,6 +144,17 @@ export default function AdminNewsPage() {
       }
       setForm(emptyForm);
       setEditingId(null);
+      pushToast({
+        type: "success",
+        title: isEditing ? "Notícia atualizada" : "Notícia publicada",
+      });
+    } catch (error) {
+      pushToast({
+        type: "error",
+        title: isEditing ? "Falha ao atualizar notícia" : "Falha ao publicar notícia",
+        description:
+          error instanceof Error ? error.message : "Tente novamente em instantes.",
+      });
     } finally {
       setSaving(false);
     }
@@ -125,7 +166,7 @@ export default function AdminNewsPage() {
       title: post.title || "",
       excerpt: post.excerpt || "",
       content: post.content || "",
-      image: post.image || "/capa.png",
+      image: post.image || defaultImage,
     });
   };
 
@@ -135,11 +176,75 @@ export default function AdminNewsPage() {
   };
 
   const handleDelete = async (postId: string) => {
-    if (!db) return;
+    if (!db) {
+      pushToast({
+        type: "error",
+        title: "Firebase não configurado",
+        description: "Não foi possível excluir a notícia.",
+      });
+      return;
+    }
     const ok = window.confirm("Deseja excluir esta notícia?");
     if (!ok) return;
-    await deleteDoc(doc(db, "news", postId));
+    try {
+      await deleteDoc(doc(db, "news", postId));
+      pushToast({
+        type: "success",
+        title: "Notícia removida",
+      });
+    } catch (error) {
+      pushToast({
+        type: "error",
+        title: "Falha ao excluir notícia",
+        description:
+          error instanceof Error ? error.message : "Tente novamente em instantes.",
+      });
+    }
   };
+
+  const uploadImage = async (file: File) => {
+    if (!storage) {
+      setUploadError("Storage não configurado.");
+      pushToast({
+        type: "error",
+        title: "Storage não configurado",
+        description: "Não foi possível enviar a imagem da notícia.",
+      });
+      return;
+    }
+    setUploading(true);
+    setUploadError("");
+    try {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+      const fileRef = ref(storage, `uploads/news/${Date.now()}-${safeName}`);
+      await uploadBytes(fileRef, file, { contentType: file.type });
+      const url = await getDownloadURL(fileRef);
+      setForm((prev) => ({ ...prev, image: url }));
+      pushToast({
+        type: "success",
+        title: "Imagem da notícia enviada",
+      });
+    } catch {
+      setUploadError("Falha ao enviar a imagem da notícia.");
+      pushToast({
+        type: "error",
+        title: "Falha ao enviar a imagem da notícia",
+        description: "Tente novamente em instantes.",
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const imageOptions = useMemo(() => {
+    if (!form.image) return IMAGE_OPTIONS;
+    const hasOption = IMAGE_OPTIONS.some((option) => option.value === form.image);
+    if (hasOption) return IMAGE_OPTIONS;
+    return [
+      ...IMAGE_OPTIONS,
+      { label: "Imagem personalizada", value: form.image },
+    ];
+  }, [form.image]);
 
   if (!isReady) {
     return <div className="min-h-screen pb-20 bg-slate-50" />;
@@ -225,19 +330,60 @@ export default function AdminNewsPage() {
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   Imagem
                 </label>
-                <select
-                  value={form.image}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, image: event.target.value }))
-                  }
-                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all bg-white"
-                >
-                  {IMAGE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
+                <p className="text-xs text-slate-400 mb-3">
+                  Escolha uma imagem padrão ou envie uma nova.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-4 sm:items-center">
+                  <select
+                    value={form.image}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, image: event.target.value }))
+                    }
+                    className="flex-1 px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all bg-white"
+                  >
+                    {imageOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="w-24 h-16 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center">
+                    <img
+                      src={safeImage(form.image) || defaultImage}
+                      alt="Prévia"
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-col sm:flex-row gap-3 sm:items-center">
+                  <input
+                    id="news-image-upload"
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) {
+                        void uploadImage(file);
+                      }
+                    }}
+                    className="sr-only"
+                  />
+                  <label
+                    htmlFor="news-image-upload"
+                    className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-medium shadow-sm hover:bg-slate-50 transition cursor-pointer"
+                  >
+                    Enviar imagem da notícia
+                  </label>
+                  {uploading ? (
+                    <span className="text-xs text-slate-500">
+                      Enviando imagem...
+                    </span>
+                  ) : null}
+                </div>
+                {uploadError && (
+                  <p className="text-xs text-red-600 mt-2">{uploadError}</p>
+                )}
               </div>
 
               <div className="flex flex-wrap gap-3">
@@ -282,7 +428,7 @@ export default function AdminNewsPage() {
                   >
                     <div className="relative h-32 w-full bg-slate-100">
                       <Image
-                        src={post.image || "/capa.png"}
+                        src={safeImage(post.image) || defaultImage}
                         alt=""
                         fill
                         className="object-cover"

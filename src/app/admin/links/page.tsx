@@ -14,6 +14,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { useToast } from "@/components/ui/Toast";
 import { db } from "@/lib/firebase/client";
 
 type LinkDoc = {
@@ -57,6 +58,7 @@ const safeIcon = (icon?: string) => {
 export default function AdminLinksPage() {
   const router = useRouter();
   const { isAuthenticated, isReady } = useAuth();
+  const { pushToast } = useToast();
   const [items, setItems] = useState<LinkDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -98,7 +100,17 @@ export default function AdminLinksPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!db || !canSubmit) return;
+    if (!db || !canSubmit) {
+      if (!db) {
+        pushToast({
+          type: "error",
+          title: "Firebase não configurado",
+          description: "Não foi possível salvar o link.",
+        });
+      }
+      return;
+    }
+    const isEditing = Boolean(editingId);
     setSaving(true);
     const payload: Omit<LinkDoc, "id"> = {
       text: form.text.trim(),
@@ -116,6 +128,17 @@ export default function AdminLinksPage() {
       }
       setForm(emptyForm);
       setEditingId(null);
+      pushToast({
+        type: "success",
+        title: isEditing ? "Link atualizado" : "Link adicionado",
+      });
+    } catch (error) {
+      pushToast({
+        type: "error",
+        title: isEditing ? "Falha ao atualizar link" : "Falha ao adicionar link",
+        description:
+          error instanceof Error ? error.message : "Tente novamente em instantes.",
+      });
     } finally {
       setSaving(false);
     }
@@ -137,10 +160,30 @@ export default function AdminLinksPage() {
   };
 
   const handleDelete = async (itemId: string) => {
-    if (!db) return;
+    if (!db) {
+      pushToast({
+        type: "error",
+        title: "Firebase não configurado",
+        description: "Não foi possível excluir o link.",
+      });
+      return;
+    }
     const ok = window.confirm("Deseja excluir este link?");
     if (!ok) return;
-    await deleteDoc(doc(db, "links", itemId));
+    try {
+      await deleteDoc(doc(db, "links", itemId));
+      pushToast({
+        type: "success",
+        title: "Link removido",
+      });
+    } catch (error) {
+      pushToast({
+        type: "error",
+        title: "Falha ao excluir link",
+        description:
+          error instanceof Error ? error.message : "Tente novamente em instantes.",
+      });
+    }
   };
 
   if (!isReady) {

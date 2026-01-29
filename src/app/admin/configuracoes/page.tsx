@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { doc, setDoc } from "firebase/firestore";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { useToast } from "@/components/ui/Toast";
 import { db } from "@/lib/firebase/client";
 import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
 import { defaultSiteSettings, type SiteSettings } from "@/data/siteContent";
@@ -12,6 +13,7 @@ export default function AdminSettingsPage() {
   const router = useRouter();
   const { isAuthenticated, isReady } = useAuth();
   const { settings, loading } = useSiteSettings();
+  const { pushToast } = useToast();
   const [form, setForm] = useState<SiteSettings>(defaultSiteSettings);
   const [saving, setSaving] = useState(false);
 
@@ -33,10 +35,28 @@ export default function AdminSettingsPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!db) return;
+    if (!db) {
+      pushToast({
+        type: "error",
+        title: "Firebase não configurado",
+        description: "Não foi possível salvar as configurações.",
+      });
+      return;
+    }
     setSaving(true);
     try {
       await setDoc(doc(db, "settings", "site"), form, { merge: true });
+      pushToast({
+        type: "success",
+        title: "Configurações salvas",
+      });
+    } catch (error) {
+      pushToast({
+        type: "error",
+        title: "Falha ao salvar configurações",
+        description:
+          error instanceof Error ? error.message : "Tente novamente em instantes.",
+      });
     } finally {
       setSaving(false);
     }
@@ -368,6 +388,23 @@ export default function AdminSettingsPage() {
                 rows={3}
                 className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                URL do mapa (embed)
+              </label>
+              <input
+                type="text"
+                value={form.mapEmbedUrl}
+                onChange={(event) =>
+                  handleChange("mapEmbedUrl", event.target.value)
+                }
+                className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
+                placeholder="https://www.google.com/maps/d/embed?mid=..."
+              />
+              <p className="text-xs text-slate-400 mt-2">
+                Cole aqui o link de embed do Google Maps para atualizar o mapa.
+              </p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>

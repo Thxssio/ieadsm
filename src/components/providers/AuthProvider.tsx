@@ -78,13 +78,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { ok: false, error: "Informe um email válido." };
     }
     try {
-      await sendPasswordResetEmail(auth, trimmed);
+      const actionCodeSettings = {
+        url: typeof window !== "undefined" 
+          ? `${window.location.origin}/?mode=resetPassword` 
+          : "https://ieadsm.web.app/?mode=resetPassword",
+        handleCodeInApp: false,
+      };
+      await sendPasswordResetEmail(auth, trimmed, actionCodeSettings);
       return { ok: true };
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
           : "Falha ao enviar email de recuperação.";
+      console.error("[AuthProvider] Reset password error:", error);
       return { ok: false, error: message };
     }
   }, []);

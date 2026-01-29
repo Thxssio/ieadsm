@@ -6,6 +6,7 @@ import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
 
 export default function MapSection() {
   const { settings } = useSiteSettings();
+  const embedUrl = settings.mapEmbedUrl?.trim() || MAP_EMBED_URL;
   return (
     <section
       id="contato"
@@ -68,7 +69,7 @@ export default function MapSection() {
           </div>
           <div className="bg-slate-800 p-3 rounded-3xl shadow-2xl h-[400px] md:h-[450px] w-full relative overflow-hidden ring-4 ring-white/10">
             <iframe
-              src={MAP_EMBED_URL}
+              src={embedUrl}
               className="w-full h-full rounded-2xl filter grayscale-[20%] hover:grayscale-0 transition-all duration-500"
               style={{ border: 0 }}
               allowFullScreen

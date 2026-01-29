@@ -14,15 +14,22 @@ function ShellContent({ children }: { children: ReactNode }) {
     pathname.startsWith(prefix)
   );
   const isHome = pathname === "/";
+  const pageBackground = pathname.startsWith("/institucional")
+    ? "bg-white"
+    : "bg-slate-50";
 
   if (hideShell) {
     return <>{children}</>;
   }
 
+  const contentSpacing = isHome
+    ? ""
+    : `pt-28 md:pt-32 lg:pt-36 xl:pt-40 ${pageBackground}`;
+
   return (
     <>
       <Header />
-      <div className={isHome ? "" : "pt-40"}>{children}</div>
+      <div className={contentSpacing}>{children}</div>
       <Footer />
     </>
   );

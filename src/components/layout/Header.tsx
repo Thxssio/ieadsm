@@ -11,7 +11,7 @@ import LoginModal from "@/components/ui/LoginModal";
 const sectionLinks = [
   { label: "Ministérios", href: "/ministerios" },
   { label: "Notícias", href: "/#noticias" },
-  { label: "Contato", href: "/#contato" },
+  { label: "Contato", href: "/contato" },
 ];
 
 export default function Header() {

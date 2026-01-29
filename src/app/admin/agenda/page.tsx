@@ -22,6 +22,7 @@ import {
   Users,
 } from "lucide-react";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { useToast } from "@/components/ui/Toast";
 import { db } from "@/lib/firebase/client";
 import { serviceTimes, type ServiceTime } from "@/data/site";
 
@@ -69,6 +70,7 @@ const emptyForm = {
 export default function AdminAgendaPage() {
   const router = useRouter();
   const { isAuthenticated, isReady } = useAuth();
+  const { pushToast } = useToast();
   const [items, setItems] = useState<ServiceTimeDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -116,7 +118,17 @@ export default function AdminAgendaPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!db || !canSubmit) return;
+    if (!db || !canSubmit) {
+      if (!db) {
+        pushToast({
+          type: "error",
+          title: "Firebase não configurado",
+          description: "Não foi possível salvar o horário.",
+        });
+      }
+      return;
+    }
+    const isEditing = Boolean(editingId);
     setSaving(true);
     const payload = {
       day: form.day.trim(),
@@ -136,6 +148,17 @@ export default function AdminAgendaPage() {
       }
       setForm(emptyForm);
       setEditingId(null);
+      pushToast({
+        type: "success",
+        title: isEditing ? "Horário atualizado" : "Horário adicionado",
+      });
+    } catch (error) {
+      pushToast({
+        type: "error",
+        title: isEditing ? "Falha ao atualizar horário" : "Falha ao adicionar horário",
+        description:
+          error instanceof Error ? error.message : "Tente novamente em instantes.",
+      });
     } finally {
       setSaving(false);
     }
@@ -160,10 +183,30 @@ export default function AdminAgendaPage() {
   };
 
   const handleDelete = async (itemId: string) => {
-    if (!db) return;
+    if (!db) {
+      pushToast({
+        type: "error",
+        title: "Firebase não configurado",
+        description: "Não foi possível excluir o horário.",
+      });
+      return;
+    }
     const ok = window.confirm("Deseja excluir este horário?");
     if (!ok) return;
-    await deleteDoc(doc(db, "serviceTimes", itemId));
+    try {
+      await deleteDoc(doc(db, "serviceTimes", itemId));
+      pushToast({
+        type: "success",
+        title: "Horário removido",
+      });
+    } catch (error) {
+      pushToast({
+        type: "error",
+        title: "Falha ao excluir horário",
+        description:
+          error instanceof Error ? error.message : "Tente novamente em instantes.",
+      });
+    }
   };
 
   if (!isReady) {

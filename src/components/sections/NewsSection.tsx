@@ -15,6 +15,15 @@ export type NewsPost = {
   createdAt?: { toDate: () => Date } | Date | number | null;
 };
 
+const safeImage = (image?: string) => {
+  if (!image) return "";
+  if (image.startsWith("http://") || image.startsWith("https://")) {
+    return image;
+  }
+  if (!image.startsWith("/")) return "";
+  return encodeURI(image);
+};
+
 const formatDate = (value?: NewsPost["createdAt"]) => {
   if (!value) return "";
   const date =
@@ -90,7 +99,7 @@ export default function NewsSection() {
             >
               <div className="relative h-44 w-full bg-slate-100">
                 <Image
-                  src={post.image?.startsWith("/") ? post.image : "/capa.png"}
+                  src={safeImage(post.image) || "/capa.png"}
                   alt=""
                   fill
                   className="object-cover"

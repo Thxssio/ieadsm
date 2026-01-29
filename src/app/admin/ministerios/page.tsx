@@ -15,6 +15,7 @@ import {
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { useToast } from "@/components/ui/Toast";
 import { db, storage } from "@/lib/firebase/client";
 
 type DepartmentDoc = {
@@ -59,6 +60,7 @@ const safeLogo = (logo?: string) => {
 export default function AdminMinisteriosPage() {
   const router = useRouter();
   const { isAuthenticated, isReady } = useAuth();
+  const { pushToast } = useToast();
   const [items, setItems] = useState<DepartmentDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -102,7 +104,17 @@ export default function AdminMinisteriosPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!db || !canSubmit) return;
+    if (!db || !canSubmit) {
+      if (!db) {
+        pushToast({
+          type: "error",
+          title: "Firebase não configurado",
+          description: "Não foi possível salvar o ministério.",
+        });
+      }
+      return;
+    }
+    const isEditing = Boolean(editingId);
     setSaving(true);
     const payload: Omit<DepartmentDoc, "id"> = {
       title: form.title.trim(),
@@ -120,6 +132,19 @@ export default function AdminMinisteriosPage() {
       }
       setForm(emptyForm);
       setEditingId(null);
+      pushToast({
+        type: "success",
+        title: isEditing ? "Ministério atualizado" : "Ministério adicionado",
+      });
+    } catch (error) {
+      pushToast({
+        type: "error",
+        title: isEditing
+          ? "Falha ao atualizar ministério"
+          : "Falha ao adicionar ministério",
+        description:
+          error instanceof Error ? error.message : "Tente novamente em instantes.",
+      });
     } finally {
       setSaving(false);
     }
@@ -143,6 +168,11 @@ export default function AdminMinisteriosPage() {
   const uploadLogo = async (file: File) => {
     if (!storage) {
       setUploadError("Storage não configurado.");
+      pushToast({
+        type: "error",
+        title: "Storage não configurado",
+        description: "Não foi possível enviar a logo.",
+      });
       return;
     }
     setUploading(true);
@@ -156,18 +186,48 @@ export default function AdminMinisteriosPage() {
       await uploadBytes(fileRef, file, { contentType: file.type });
       const url = await getDownloadURL(fileRef);
       setForm((prev) => ({ ...prev, logo: url }));
+      pushToast({
+        type: "success",
+        title: "Logo enviada",
+      });
     } catch (error) {
-      setUploadError("Falha ao enviar a imagem.");
+      setUploadError("Falha ao enviar a logo.");
+      pushToast({
+        type: "error",
+        title: "Falha ao enviar a logo",
+        description:
+          error instanceof Error ? error.message : "Tente novamente em instantes.",
+      });
     } finally {
       setUploading(false);
     }
   };
 
   const handleDelete = async (itemId: string) => {
-    if (!db) return;
+    if (!db) {
+      pushToast({
+        type: "error",
+        title: "Firebase não configurado",
+        description: "Não foi possível excluir o ministério.",
+      });
+      return;
+    }
     const ok = window.confirm("Deseja excluir este ministério?");
     if (!ok) return;
-    await deleteDoc(doc(db, "departments", itemId));
+    try {
+      await deleteDoc(doc(db, "departments", itemId));
+      pushToast({
+        type: "success",
+        title: "Ministério removido",
+      });
+    } catch (error) {
+      pushToast({
+        type: "error",
+        title: "Falha ao excluir ministério",
+        description:
+          error instanceof Error ? error.message : "Tente novamente em instantes.",
+      });
+    }
   };
 
   if (!isReady) {
@@ -298,7 +358,7 @@ export default function AdminMinisteriosPage() {
                       htmlFor="department-logo-upload"
                       className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-medium shadow-sm hover:bg-slate-50 transition cursor-pointer"
                     >
-                      Enviar imagem
+                      Enviar logo
                     </label>
                     {uploading ? (
                       <span className="text-xs text-slate-500">

@@ -1,3 +1,5 @@
+import { MAP_EMBED_URL } from "@/data/site";
+
 export type SiteSettings = {
   heroBadge: string;
   heroTitleLine: string;
@@ -19,6 +21,7 @@ export type SiteSettings = {
   mapEyebrow: string;
   mapTitle: string;
   mapDescription: string;
+  mapEmbedUrl: string;
   locationTitle: string;
   locationAddress1: string;
   locationAddress2: string;
@@ -58,6 +61,7 @@ const EMPTY_SITE_SETTINGS: SiteSettings = {
   mapEyebrow: "",
   mapTitle: "",
   mapDescription: "",
+  mapEmbedUrl: "",
   locationTitle: "",
   locationAddress1: "",
   locationAddress2: "",
@@ -100,6 +104,7 @@ export const seedSiteSettings: SiteSettings = {
   mapTitle: "Venha nos visitar em nossa Sede ou Congregações",
   mapDescription:
     "Estamos localizados estrategicamente para servir a nossa cidade. Temos amplo estacionamento e equipe de recepção pronta para te acolher.",
+  mapEmbedUrl: MAP_EMBED_URL,
   locationTitle: "Sede Principal",
   locationAddress1: "R. Venâncio Aires, 1504 - Centro",
   locationAddress2: "Santa Maria - RS",

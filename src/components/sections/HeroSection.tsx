@@ -40,7 +40,7 @@ export default function HeroSection() {
 
         <div className="animate-fade-in-up delay-200 flex flex-col sm:flex-row gap-4 justify-center mt-8 md:mt-10">
           <Link
-            href="/#contato"
+            href="/contato"
             className="bg-white text-blue-900 hover:bg-blue-50 px-8 py-4 rounded-full font-bold transition-all shadow-lg hover:shadow-white/20 hover:-translate-y-1"
           >
             Planeje sua Visita

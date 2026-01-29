@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { useToast } from "@/components/ui/Toast";
 import { 
   Users, 
   ArrowLeft, 
@@ -16,8 +17,7 @@ import {
   EyeOff,
   KeyRound,
   Calendar,
-  Monitor,
-  Smartphone
+  Monitor
 } from "lucide-react";
 
 // --- Tipos ---
@@ -67,6 +67,7 @@ const getProviderIcon = (provider: string) => {
 export default function AdminUsersPage() {
   const router = useRouter();
   const { isAuthenticated, isReady, user, resetPassword } = useAuth();
+  const { pushToast } = useToast();
   
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -133,8 +134,19 @@ export default function AdminUsersPage() {
       
       setForm(emptyForm);
       await loadUsers();
+      pushToast({
+        type: "success",
+        title: "Usuário criado",
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao criar usuário.");
+      const message =
+        err instanceof Error ? err.message : "Erro ao criar usuário.";
+      setError(message);
+      pushToast({
+        type: "error",
+        title: "Falha ao criar usuário",
+        description: message,
+      });
     } finally {
       setSaving(false);
     }
@@ -157,8 +169,20 @@ export default function AdminUsersPage() {
       });
       if (!res.ok) throw new Error("Falha ao excluir");
       await loadUsers();
+      pushToast({
+        type: "success",
+        title: "Usuário removido",
+      });
     } catch (err) {
-      alert("Não foi possível excluir o usuário.");
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Não foi possível excluir o usuário.";
+      pushToast({
+        type: "error",
+        title: "Falha ao excluir usuário",
+        description: message,
+      });
     }
   };
 
@@ -166,15 +190,32 @@ export default function AdminUsersPage() {
     if (!email) {
       setError("Este usuário não possui email cadastrado.");
       setNotice("");
+      pushToast({
+        type: "error",
+        title: "Email não cadastrado",
+        description: "Este usuário não possui email cadastrado.",
+      });
       return;
     }
     const result = await resetPassword(email);
     if (result.ok) {
       setError("");
       setNotice("Email de recuperação enviado.");
+      pushToast({
+        type: "success",
+        title: "Recuperação enviada",
+        description: "Email de recuperação enviado com sucesso.",
+      });
     } else {
-      setError(result.error || "Falha ao enviar email de recuperação.");
+      const message =
+        result.error || "Falha ao enviar email de recuperação.";
+      setError(message);
       setNotice("");
+      pushToast({
+        type: "error",
+        title: "Falha ao enviar recuperação",
+        description: message,
+      });
     }
   };
 
@@ -188,10 +229,10 @@ export default function AdminUsersPage() {
   if (!isReady || !isAuthenticated) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50/50 pb-20 font-sans text-slate-900">
+    <div className="min-h-screen bg-slate-50 pb-20 font-sans text-slate-900">
       
       {/* Header Section */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+      <header className="bg-slate-50/95 border-b border-slate-200 sticky top-0 z-10 backdrop-blur">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button
@@ -302,14 +343,14 @@ export default function AdminUsersPage() {
                               <button
                                 onClick={() => handleResetPassword(member.email)}
                                 disabled={!member.email}
-                                className="text-slate-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded-lg transition-all opacity-0 group-hover:opacity-100 focus:opacity-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                className="text-slate-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 rounded-lg transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100 focus:opacity-100 disabled:opacity-40 disabled:cursor-not-allowed"
                                 title="Enviar recuperação de senha"
                               >
                                 <KeyRound className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={() => handleDelete(member.uid)}
-                                className="text-slate-400 hover:text-red-600 p-2 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                className="text-slate-400 hover:text-red-600 p-2 hover:bg-red-50 rounded-lg transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100 focus:opacity-100"
                                 title="Excluir Usuário"
                               >
                                 <Trash2 className="w-4 h-4" />
