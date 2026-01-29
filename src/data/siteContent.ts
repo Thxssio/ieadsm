@@ -29,6 +29,7 @@ export type SiteSettings = {
   officeTitle: string;
   officeHours: string;
   officePhone: string;
+  pixKey: string;
   institutionalPresidentTitle: string;
   presidentVerseRef: string;
   presidentVerseText: string;
@@ -69,6 +70,7 @@ const EMPTY_SITE_SETTINGS: SiteSettings = {
   officeTitle: "",
   officeHours: "",
   officePhone: "",
+  pixKey: "",
   institutionalPresidentTitle: "",
   presidentVerseRef: "",
   presidentVerseText: "",
@@ -112,6 +114,7 @@ export const seedSiteSettings: SiteSettings = {
   officeTitle: "Secretaria",
   officeHours: "Segunda a Sexta: 08:00 - 17:00",
   officePhone: "Tel: (55) 3221-5863",
+  pixKey: "95629689/0001-24",
   institutionalPresidentTitle: "Palavra do Presidente",
   presidentVerseRef: "Atos 6:4",
   presidentVerseText:

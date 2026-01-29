@@ -490,6 +490,18 @@ export default function AdminSettingsPage() {
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Chave PIX
+                </label>
+                <input
+                  type="text"
+                  value={form.pixKey}
+                  onChange={(event) => handleChange("pixKey", event.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
+                  placeholder="95629689/0001-24 ou adsm.tesouraria@gmail.com"
+                />
+              </div>
             </div>
           </section>
 

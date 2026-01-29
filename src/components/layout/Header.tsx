@@ -11,6 +11,7 @@ import LoginModal from "@/components/ui/LoginModal";
 const sectionLinks = [
   { label: "Ministérios", href: "/ministerios" },
   { label: "Notícias", href: "/#noticias" },
+  { label: "Eventos", href: "/eventos" },
   { label: "Contato", href: "/contato" },
 ];
 
@@ -141,7 +142,7 @@ export default function Header() {
             ))}
 
             <Link
-              href="/#contribuicao"
+              href="/contribua"
               className={`${baseLinkClasses} ${linkTone}`}
             >
               <span className="relative z-10">Contribua</span>
@@ -216,7 +217,7 @@ export default function Header() {
             >
               Institucional
             </Link>
-            {[...sectionLinks, { label: "Contribua", href: "/#contribuicao" }].map(
+            {[...sectionLinks, { label: "Contribua", href: "/contribua" }].map(
               (item) => (
                 <Link
                   key={item.label}

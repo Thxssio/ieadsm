@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import {
@@ -65,6 +65,7 @@ export default function AdminBoardPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
@@ -198,6 +199,19 @@ export default function AdminBoardPage() {
     } finally {
       setUploading(false);
     }
+  };
+
+  const handlePhotoDrop = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    setIsDraggingPhoto(false);
+    const file = event.dataTransfer.files?.[0];
+    if (file) {
+      void uploadPhoto(file);
+    }
+  };
+
+  const handlePhotoDragOver = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
   };
 
   const handleDelete = async (itemId: string) => {
@@ -345,9 +359,20 @@ export default function AdminBoardPage() {
                     />
                     <label
                       htmlFor="board-photo-upload"
-                      className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-medium shadow-sm hover:bg-slate-50 transition cursor-pointer"
+                      onDrop={handlePhotoDrop}
+                      onDragOver={handlePhotoDragOver}
+                      onDragEnter={() => setIsDraggingPhoto(true)}
+                      onDragLeave={() => setIsDraggingPhoto(false)}
+                      className={`flex flex-col items-center justify-center gap-2 px-4 py-6 rounded-xl border-2 border-dashed text-sm font-medium transition cursor-pointer w-full sm:w-auto sm:min-w-[240px] ${
+                        isDraggingPhoto
+                          ? "border-blue-400 bg-blue-50 text-blue-700"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
                     >
-                      Enviar foto
+                      <span>Arraste a foto aqui</span>
+                      <span className="text-xs text-slate-500">
+                        ou clique para enviar
+                      </span>
                     </label>
                     {uploading ? (
                       <span className="text-xs text-slate-500">

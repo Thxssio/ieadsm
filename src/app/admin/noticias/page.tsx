@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import {
@@ -74,6 +74,7 @@ export default function AdminNewsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
@@ -236,6 +237,19 @@ export default function AdminNewsPage() {
     }
   };
 
+  const handleImageDrop = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    setIsDraggingImage(false);
+    const file = event.dataTransfer.files?.[0];
+    if (file) {
+      void uploadImage(file);
+    }
+  };
+
+  const handleImageDragOver = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+  };
+
   const imageOptions = useMemo(() => {
     if (!form.image) return IMAGE_OPTIONS;
     const hasOption = IMAGE_OPTIONS.some((option) => option.value === form.image);
@@ -371,9 +385,20 @@ export default function AdminNewsPage() {
                   />
                   <label
                     htmlFor="news-image-upload"
-                    className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-medium shadow-sm hover:bg-slate-50 transition cursor-pointer"
+                    onDrop={handleImageDrop}
+                    onDragOver={handleImageDragOver}
+                    onDragEnter={() => setIsDraggingImage(true)}
+                    onDragLeave={() => setIsDraggingImage(false)}
+                    className={`flex flex-col items-center justify-center gap-2 px-4 py-6 rounded-xl border-2 border-dashed text-sm font-medium transition cursor-pointer w-full sm:w-auto sm:min-w-[260px] ${
+                      isDraggingImage
+                        ? "border-blue-400 bg-blue-50 text-blue-700"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
                   >
-                    Enviar imagem da notícia
+                    <span>Arraste a imagem da notícia</span>
+                    <span className="text-xs text-slate-500">
+                      ou clique para enviar
+                    </span>
                   </label>
                   {uploading ? (
                     <span className="text-xs text-slate-500">

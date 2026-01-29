@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import Image from "next/image";
 import { AnimatePresence, motion, type Variants } from "framer-motion";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
@@ -177,7 +178,13 @@ export default function LinktreePage() {
       <div className="w-full max-w-md px-4 py-8 min-h-screen flex flex-col">
         
         {/* Topo / Share */}
-        <div className="flex justify-end mb-4">
+        <div className="flex items-center justify-between mb-4">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 rounded-full bg-white/70 backdrop-blur-sm border border-white/50 px-4 py-2 text-sm font-semibold text-slate-700 hover:text-slate-900 hover:bg-white transition-colors shadow-sm"
+          >
+            Inicio
+          </Link>
           <motion.button
             onClick={handleShare}
             whileTap={{ scale: 0.9 }}
