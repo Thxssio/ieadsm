@@ -7,6 +7,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -16,7 +17,8 @@ import {
   signOut,
   type User,
 } from "firebase/auth";
-import { auth } from "@/lib/firebase/client";
+import { doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase/client";
 
 type AuthContextValue = {
   isAuthenticated: boolean;
@@ -32,6 +34,33 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const lastUserRef = useRef<User | null>(null);
+  const presenceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null
+  );
+
+  const updatePresence = useCallback(
+    async (currentUser: User, state: "online" | "offline") => {
+      if (!db) return;
+      try {
+        const ref = doc(db, "presence", currentUser.uid);
+        await setDoc(
+          ref,
+          {
+            uid: currentUser.uid,
+            email: currentUser.email ?? "",
+            displayName: currentUser.displayName ?? "",
+            state,
+            lastSeen: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      } catch (error) {
+        console.warn("[AuthProvider] Presence update failed:", error);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     if (!auth) {
@@ -41,9 +70,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsub = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setIsReady(true);
+      if (presenceIntervalRef.current) {
+        clearInterval(presenceIntervalRef.current);
+        presenceIntervalRef.current = null;
+      }
+      if (currentUser) {
+        lastUserRef.current = currentUser;
+        void updatePresence(currentUser, "online");
+        presenceIntervalRef.current = setInterval(() => {
+          void updatePresence(currentUser, "online");
+        }, 45000);
+      } else if (lastUserRef.current) {
+        void updatePresence(lastUserRef.current, "offline");
+        lastUserRef.current = null;
+      }
     });
     return () => unsub();
-  }, []);
+  }, [updatePresence]);
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -66,8 +109,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     if (!auth) return;
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      await updatePresence(currentUser, "offline");
+    }
     await signOut(auth);
-  }, []);
+  }, [updatePresence]);
 
   const resetPassword = useCallback(async (email: string) => {
     if (!auth) {

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { LayoutDashboard, LogIn, Menu, X } from "lucide-react";
+import { LayoutDashboard, LogIn, LogOut, Menu, X } from "lucide-react";
 import { LOGO_BLACK, LOGO_WHITE } from "@/data/site";
 import { useAuth } from "@/components/providers/AuthProvider";
 import LoginModal from "@/components/ui/LoginModal";
@@ -22,7 +22,7 @@ export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, logout } = useAuth();
 
   const isHome = pathname === "/";
   const isInstitutional = pathname === "/institucional";
@@ -76,6 +76,12 @@ export default function Header() {
     : "text-white/90 hover:text-white";
   const mobileLinkHover = isSolid ? "hover:bg-blue-50" : "hover:bg-white/10";
   const mobileBorder = isSolid ? "border-slate-50" : "border-white/10";
+
+  const handleLogout = async () => {
+    await logout();
+    setIsMenuOpen(false);
+    router.push("/");
+  };
 
   return (
     <header
@@ -153,19 +159,33 @@ export default function Header() {
           </nav>
 
           <div className="flex items-center justify-self-end">
-            <div className="hidden lg:flex items-center">
+            <div className="hidden lg:flex items-center gap-3">
               {isAuthenticated ? (
-                <Link
-                  href="/admin"
-                  className={`px-6 py-2.5 rounded-full font-bold transition-all shadow-lg hover:shadow-xl flex items-center gap-2 transform hover:-translate-y-0.5 ${
-                    isSolid
-                      ? "bg-green-600 hover:bg-green-700 text-white"
-                      : "bg-white text-green-700 hover:bg-green-50"
-                  }`}
-                >
-                  <LayoutDashboard size={18} />
-                  <span>Painel</span>
-                </Link>
+                <>
+                  <Link
+                    href="/admin"
+                    className={`px-6 py-2.5 rounded-full font-bold transition-all shadow-lg hover:shadow-xl flex items-center gap-2 transform hover:-translate-y-0.5 ${
+                      isSolid
+                        ? "bg-green-600 hover:bg-green-700 text-white"
+                        : "bg-white text-green-700 hover:bg-green-50"
+                    }`}
+                  >
+                    <LayoutDashboard size={18} />
+                    <span>Painel</span>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className={`px-4 py-2.5 rounded-full font-bold transition-all border flex items-center gap-2 ${
+                      isSolid
+                        ? "border-slate-200 text-slate-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                        : "border-white/40 text-white hover:bg-white/15"
+                    }`}
+                  >
+                    <LogOut size={18} />
+                    <span>Sair</span>
+                  </button>
+                </>
               ) : (
                 <button
                   type="button"
@@ -231,18 +251,32 @@ export default function Header() {
             )}
             <div className="pt-4 mt-2">
               {isAuthenticated ? (
-                <Link
-                  href="/admin"
-                  onClick={() => setIsMenuOpen(false)}
-                  className={`w-full px-5 py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md text-lg ${
-                    isSolid
-                      ? "bg-green-600 hover:bg-green-700 text-white"
-                      : "bg-white text-green-700 hover:bg-white/90"
-                  }`}
-                >
-                  <LayoutDashboard size={20} />
-                  Painel
-                </Link>
+                <div className="space-y-3">
+                  <Link
+                    href="/admin"
+                    onClick={() => setIsMenuOpen(false)}
+                    className={`w-full px-5 py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md text-lg ${
+                      isSolid
+                        ? "bg-green-600 hover:bg-green-700 text-white"
+                        : "bg-white text-green-700 hover:bg-white/90"
+                    }`}
+                  >
+                    <LayoutDashboard size={20} />
+                    Painel
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className={`w-full px-5 py-4 rounded-xl font-bold flex items-center justify-center gap-2 text-lg border ${
+                      isSolid
+                        ? "border-slate-200 text-slate-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                        : "border-white/40 text-white hover:bg-white/15"
+                    }`}
+                  >
+                    <LogOut size={20} />
+                    Sair
+                  </button>
+                </div>
               ) : (
                 <button
                   type="button"
