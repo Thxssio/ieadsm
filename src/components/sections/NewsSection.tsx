@@ -5,6 +5,7 @@ import Image from "next/image";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
+import NewsModal from "@/components/ui/NewsModal";
 
 export type NewsPost = {
   id: string;
@@ -45,6 +46,7 @@ export default function NewsSection() {
   const { settings } = useSiteSettings();
   const [posts, setPosts] = useState<NewsPost[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedPost, setSelectedPost] = useState<NewsPost | null>(null);
 
   useEffect(() => {
     if (!db) {
@@ -95,7 +97,16 @@ export default function NewsSection() {
           {visiblePosts.map((post) => (
             <article
               key={post.id}
-              className="group bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-lg transition-all overflow-hidden flex flex-col"
+              className="group bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-lg transition-all overflow-hidden flex flex-col cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelectedPost(post)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setSelectedPost(post);
+                }
+              }}
             >
               <div className="relative h-44 w-full bg-slate-100">
                 <Image
@@ -119,11 +130,23 @@ export default function NewsSection() {
                     {post.excerpt}
                   </p>
                 ) : null}
+                <span className="mt-4 inline-flex items-center text-sm font-semibold text-blue-600">
+                  Ler notícia
+                </span>
               </div>
             </article>
           ))}
         </div>
       </div>
+      <NewsModal
+        open={Boolean(selectedPost)}
+        onClose={() => setSelectedPost(null)}
+        title={selectedPost?.title ?? ""}
+        date={formatDate(selectedPost?.createdAt)}
+        image={safeImage(selectedPost?.image) || "/capa.png"}
+        content={selectedPost?.content}
+        excerpt={selectedPost?.excerpt}
+      />
     </section>
   );
 }
