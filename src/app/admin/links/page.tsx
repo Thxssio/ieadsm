@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import {
@@ -13,9 +13,10 @@ import {
   query,
   updateDoc,
 } from "firebase/firestore";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useToast } from "@/components/ui/Toast";
-import { db } from "@/lib/firebase/client";
+import { db, storage } from "@/lib/firebase/client";
 
 type LinkDoc = {
   id: string;
@@ -51,7 +52,9 @@ const emptyForm = {
 };
 
 const safeIcon = (icon?: string) => {
-  if (!icon || !icon.startsWith("/")) return "";
+  if (!icon) return "";
+  if (icon.startsWith("http://") || icon.startsWith("https://")) return icon;
+  if (!icon.startsWith("/")) return "";
   return encodeURI(icon);
 };
 
@@ -64,6 +67,9 @@ export default function AdminLinksPage() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [isDraggingIcon, setIsDraggingIcon] = useState(false);
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
@@ -97,6 +103,12 @@ export default function AdminLinksPage() {
     () => form.text.trim().length > 0 && form.href.trim().length > 0,
     [form]
   );
+  const isRemoteIcon = /^https?:\/\//i.test(form.icon);
+  const iconSelectValue = isRemoteIcon
+    ? form.icon
+    : ICON_OPTIONS.some((option) => option.value === form.icon)
+    ? form.icon
+    : "";
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -116,10 +128,8 @@ export default function AdminLinksPage() {
       text: form.text.trim(),
       href: form.href.trim(),
       order: Number(form.order) || 0,
+      icon: form.icon.trim(),
     };
-    if (form.icon) {
-      payload.icon = form.icon;
-    }
     try {
       if (editingId) {
         await updateDoc(doc(db, "links", editingId), payload);
@@ -146,6 +156,7 @@ export default function AdminLinksPage() {
 
   const handleEdit = (item: LinkDoc) => {
     setEditingId(item.id);
+    setUploadError("");
     setForm({
       text: item.text || "",
       href: item.href || "",
@@ -157,6 +168,7 @@ export default function AdminLinksPage() {
   const handleCancel = () => {
     setEditingId(null);
     setForm(emptyForm);
+    setUploadError("");
   };
 
   const handleDelete = async (itemId: string) => {
@@ -184,6 +196,54 @@ export default function AdminLinksPage() {
           error instanceof Error ? error.message : "Tente novamente em instantes.",
       });
     }
+  };
+
+  const uploadIcon = async (file: File) => {
+    if (!storage) {
+      setUploadError("Storage não configurado.");
+      pushToast({
+        type: "error",
+        title: "Storage não configurado",
+        description: "Não foi possível enviar a imagem.",
+      });
+      return;
+    }
+    setUploading(true);
+    setUploadError("");
+    try {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+      const fileRef = ref(storage, `uploads/links/${Date.now()}-${safeName}`);
+      await uploadBytes(fileRef, file, { contentType: file.type });
+      const url = await getDownloadURL(fileRef);
+      setForm((prev) => ({ ...prev, icon: url }));
+      pushToast({
+        type: "success",
+        title: "Imagem enviada",
+      });
+    } catch (error) {
+      setUploadError("Falha ao enviar a imagem.");
+      pushToast({
+        type: "error",
+        title: "Falha ao enviar imagem",
+        description:
+          error instanceof Error ? error.message : "Tente novamente em instantes.",
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleIconDrop = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    setIsDraggingIcon(false);
+    const file = event.dataTransfer.files?.[0];
+    if (file) {
+      void uploadIcon(file);
+    }
+  };
+
+  const handleIconDragOver = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
   };
 
   if (!isReady) {
@@ -259,26 +319,37 @@ export default function AdminLinksPage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-[1fr_160px] gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
-                      Ordem
-                    </label>
-                    <input
-                      type="number"
-                      value={form.order}
-                      onChange={(event) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          order: Number(event.target.value),
-                        }))
-                      }
-                      className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
-                      min={0}
-                    />
-                  </div>
-                  <div className="flex items-end gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Ordem
+                  </label>
+                  <input
+                    type="number"
+                    value={form.order}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        order: Number(event.target.value),
+                      }))
+                    }
+                    className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
+                    min={0}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Imagem do link (opcional)
+                  </label>
+                  <p className="text-xs text-slate-400 mb-3">
+                    Envie uma imagem para personalizar o link.
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-4 sm:items-center">
+                    <div
+                      className={`w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden ${
+                        uploading ? "animate-pulse" : ""
+                      }`}
+                    >
                       {form.icon ? (
                         <Image
                           src={safeIcon(form.icon) || "/logo.png"}
@@ -293,22 +364,64 @@ export default function AdminLinksPage() {
                       )}
                     </div>
                     <div className="text-xs text-slate-500">
-                      Use apenas imagens da pasta public.
+                      Você também pode escolher um ícone da biblioteca abaixo.
                     </div>
                   </div>
+                  <div className="mt-4 flex flex-col sm:flex-row gap-3 sm:items-center">
+                    <input
+                      id="link-icon-upload"
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) {
+                          void uploadIcon(file);
+                        }
+                      }}
+                      className="sr-only"
+                    />
+                    <label
+                      htmlFor="link-icon-upload"
+                      onDrop={handleIconDrop}
+                      onDragOver={handleIconDragOver}
+                      onDragEnter={() => setIsDraggingIcon(true)}
+                      onDragLeave={() => setIsDraggingIcon(false)}
+                      className={`flex flex-col items-center justify-center gap-2 px-4 py-5 rounded-xl border-2 border-dashed text-sm font-medium transition cursor-pointer w-full sm:w-auto sm:min-w-[240px] ${
+                        isDraggingIcon || uploading
+                          ? "border-blue-400 bg-blue-50 text-blue-700"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span>Arraste a imagem aqui</span>
+                      <span className="text-xs text-slate-500">
+                        ou clique para enviar
+                      </span>
+                    </label>
+                    {uploading ? (
+                      <span className="text-xs text-slate-500">
+                        Enviando imagem...
+                      </span>
+                    ) : null}
+                  </div>
+                  {uploadError ? (
+                    <p className="text-xs text-red-600 mt-2">{uploadError}</p>
+                  ) : null}
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Ícone (opcional)
+                    Ícone da biblioteca (opcional)
                   </label>
                   <select
-                    value={form.icon}
+                    value={iconSelectValue}
                     onChange={(event) =>
                       setForm((prev) => ({ ...prev, icon: event.target.value }))
                     }
                     className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all bg-white"
                   >
+                    {isRemoteIcon ? (
+                      <option value={form.icon}>Imagem enviada</option>
+                    ) : null}
                     {ICON_OPTIONS.map((option) => (
                       <option key={option.label} value={option.value}>
                         {option.label}

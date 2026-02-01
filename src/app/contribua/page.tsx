@@ -140,7 +140,7 @@ export default function ContribuaPage() {
                   className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
                 >
                   <Copy className="w-4 h-4" />
-                  {copiedPayload ? "Código copiado" : "Copiar código PIX"}
+                  {copiedPayload ? "Código copiado" : "Pix Copia e cola"}
                 </button>
               </div>
 
