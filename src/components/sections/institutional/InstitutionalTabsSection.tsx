@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
 import BoardSection from "@/components/sections/institutional/BoardSection";
 import HistoryTimelineSection from "@/components/sections/institutional/HistoryTimelineSection";
@@ -16,6 +17,7 @@ type TabItem = {
 
 export default function InstitutionalTabsSection() {
   const { settings } = useSiteSettings();
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState("president");
 
   const tabs = useMemo<TabItem[]>(
@@ -49,6 +51,19 @@ export default function InstitutionalTabsSection() {
     ],
     [settings]
   );
+
+  useEffect(() => {
+    const fromQuery = searchParams.get("tab")?.toLowerCase() || "";
+    const fromHash =
+      typeof window !== "undefined"
+        ? window.location.hash.replace("#", "").toLowerCase()
+        : "";
+    const target = fromQuery || fromHash;
+    if (!target) return;
+    if (tabs.some((tab) => tab.id === target)) {
+      setActiveTab(target);
+    }
+  }, [searchParams, tabs]);
 
   const activeContent =
     tabs.find((tab) => tab.id === activeTab)?.content ?? tabs[0]?.content;

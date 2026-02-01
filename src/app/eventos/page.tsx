@@ -86,51 +86,48 @@ export default function EventosPage() {
   return (
     <main className="min-h-screen bg-gray-50 selection:bg-indigo-100 selection:text-indigo-900">
       
-      {/* Header com Gradiente Suave */}
-      <div className="relative border-b border-gray-200 bg-white pb-12 pt-16 sm:pb-16 sm:pt-24 lg:pt-32">
-        <div className="absolute inset-0 -z-10 overflow-hidden">
-             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[400px] bg-indigo-50/50 blur-3xl rounded-full opacity-60" />
-        </div>
-
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <div className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-700/10">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-600"></span>
-                </span>
-                Eventos & Inscrições
-              </div>
-
-              <h1 className="mt-6 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl lg:text-6xl">
-                Participe dos nossos <span className="text-indigo-600">eventos</span>
-              </h1>
-              
-              <p className="mt-4 text-lg leading-8 text-gray-600">
-                Abaixo você encontra todos os formulários ativos para inscrições, 
-                listas de espera e cadastros. Selecione um evento para começar.
-              </p>
-            </div>
-
-            {/* Contador Estilizado */}
-            {!loading && (
-                <div className="flex items-center gap-4 rounded-2xl bg-white p-4 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] ring-1 ring-gray-100">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-                        <CalendarDays className="h-6 w-6" />
-                    </div>
-                    <div>
-                        <p className="text-sm font-medium text-gray-500">Disponíveis agora</p>
-                        <p className="text-xl font-bold text-gray-900">
-                            {formLinks.length} <span className="text-sm font-normal text-gray-400">formulários</span>
-                        </p>
-                    </div>
-                </div>
-            )}
-          </div>
-        </div>
+      {/* Header */}
+      <div className="absolute inset-0 -z-10 overflow-hidden">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[400px] bg-indigo-50/50 blur-3xl rounded-full opacity-60" />
       </div>
 
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-700/10">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-600"></span>
+              </span>
+              Eventos & Inscrições
+            </div>
+
+            <h1 className="mt-6 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl lg:text-6xl">
+              Participe dos nossos <span className="text-indigo-600">eventos</span>
+            </h1>
+            
+            <p className="mt-4 text-lg leading-8 text-gray-600">
+              Abaixo você encontra todos os formulários ativos para inscrições, 
+              listas de espera e cadastros. Selecione um evento para começar.
+            </p>
+          </div>
+
+          {/* Contador Estilizado */}
+          {!loading && (
+              <div className="flex items-center gap-4 rounded-2xl bg-white p-4 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] ring-1 ring-gray-100">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                      <CalendarDays className="h-6 w-6" />
+                  </div>
+                  <div>
+                      <p className="text-sm font-medium text-gray-500">Disponíveis agora</p>
+                      <p className="text-xl font-bold text-gray-900">
+                          {formLinks.length} <span className="text-sm font-normal text-gray-400">formulários</span>
+                      </p>
+                  </div>
+              </div>
+          )}
+        </div>
+      </div>
       {/* Grid de Cards */}
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
         {loading ? (
@@ -181,7 +178,7 @@ export default function EventosPage() {
                     <button
                       type="button"
                       onClick={() => setActiveForm(link)}
-                      className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                      className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
                     >
                       Inscrever-se
                       <ArrowRight className="h-4 w-4 opacity-70" />
