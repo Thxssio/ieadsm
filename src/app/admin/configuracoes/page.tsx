@@ -105,23 +105,6 @@ export default function AdminSettingsPage() {
               Gerenciar diretoria
             </button>
           </div>
-          <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">
-                Setores e Congregações
-              </h2>
-              <p className="text-sm text-slate-500 mt-1">
-                Cadastre congregações, endereços e fotos.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => router.push("/admin/congregacoes")}
-              className="inline-flex items-center text-blue-600 font-bold hover:text-blue-800 transition-colors bg-blue-50 px-5 py-2.5 rounded-full shadow-sm hover:shadow-md"
-            >
-              Gerenciar congregações
-            </button>
-          </div>
         </div>
 
         <form
