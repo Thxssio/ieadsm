@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   CalendarDays,
+  ClipboardList,
   FileText,
   Link2,
   LogOut,
@@ -19,9 +20,17 @@ import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
 
 export default function AdminPage() {
   const router = useRouter();
-  const { isAuthenticated, isReady, logout } = useAuth();
+  const { isAuthenticated, isReady, logout, user } = useAuth();
   const { settings } = useSiteSettings();
   const adminMapUrl = settings.adminMapEmbedUrl?.trim();
+
+  const firstName = (() => {
+    const displayName = user?.displayName?.trim();
+    if (displayName) return displayName.split(/\s+/)[0];
+    const emailName = user?.email?.split("@")[0]?.trim();
+    if (emailName) return emailName.split(".")[0];
+    return "Administrador";
+  })();
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
@@ -45,7 +54,9 @@ export default function AdminPage() {
             <h1 className="text-3xl font-bold text-slate-900">
               Painel Administrativo
             </h1>
-            <p className="text-slate-500">Bem-vindo de volta, Administrador.</p>
+            <p className="text-slate-500">
+              Bem-vindo de volta, {firstName}.
+            </p>
           </div>
           <button
             onClick={async () => {
@@ -131,6 +142,19 @@ export default function AdminPage() {
             </h3>
             <p className="text-sm text-slate-500 mt-2">
               Cadastre setores, endereços e fotos.
+            </p>
+          </Link>
+
+          <Link
+            href="/admin/patrimonio"
+            className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow cursor-pointer group"
+          >
+            <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+              <ClipboardList size={24} />
+            </div>
+            <h3 className="font-bold text-lg text-slate-800">Patrimônio</h3>
+            <p className="text-sm text-slate-500 mt-2">
+              Controle de itens e etiquetas com QR.
             </p>
           </Link>
 

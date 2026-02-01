@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   ArrowRight,
   Clock,
@@ -228,7 +229,13 @@ export default function ContactPage() {
                 </div>
 
                 <div className="p-4 bg-slate-50 border-t border-slate-200 text-center text-sm text-slate-500">
-                  Esperamos sua visita em nossos cultos.
+                  <p>Venha nos visitar em nossa Sede ou Congregações.</p>
+                  <Link
+                    href="/institucional?tab=sectors"
+                    className="mt-3 inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition"
+                  >
+                    Ver Setores e Congregações
+                  </Link>
                 </div>
               </div>
             </div>
