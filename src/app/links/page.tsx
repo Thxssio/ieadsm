@@ -43,9 +43,19 @@ const domainFromUrl = (url?: string) => {
   }
 };
 
+const faviconFromUrl = (url?: string) => {
+  const safeUrl = sanitizeUrl(url);
+  if (!safeUrl) return "";
+  return `https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(
+    safeUrl
+  )}`;
+};
+
 const autoIcon = () => "/logo.png"; // Fallback
 const safeIcon = (icon?: string) => {
-  if (!icon || !icon.startsWith("/")) return "";
+  if (!icon) return "";
+  if (icon.startsWith("http://") || icon.startsWith("https://")) return icon;
+  if (!icon.startsWith("/")) return "";
   return encodeURI(icon);
 };
 
@@ -126,7 +136,7 @@ export default function LinktreePage() {
       .map((link) => ({
         ...link,
         href: sanitizeUrl(link.href),
-        icon: safeIcon(link.icon) || autoIcon(),
+        icon: safeIcon(link.icon) || faviconFromUrl(link.href) || autoIcon(),
       }));
   }, [links, loading]);
 

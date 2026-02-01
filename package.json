@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "seed:firestore": "npx tsx scripts/seed-firestore.ts",
+    "seed:congregations": "npx tsx scripts/seed-congregations.ts",
     "migrate:departments": "npx tsx scripts/migrate-departments.ts"
   },
   "dependencies": {

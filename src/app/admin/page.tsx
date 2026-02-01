@@ -8,16 +8,20 @@ import {
   FileText,
   Link2,
   LogOut,
+  MapPin,
   ShieldCheck,
   Megaphone,
   Settings,
   Users,
 } from "lucide-react";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
 
 export default function AdminPage() {
   const router = useRouter();
   const { isAuthenticated, isReady, logout } = useAuth();
+  const { settings } = useSiteSettings();
+  const adminMapUrl = settings.adminMapEmbedUrl?.trim();
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
@@ -116,6 +120,21 @@ export default function AdminPage() {
           </Link>
 
           <Link
+            href="/admin/congregacoes"
+            className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow cursor-pointer group"
+          >
+            <div className="w-12 h-12 bg-teal-100 text-teal-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-teal-600 group-hover:text-white transition-colors">
+              <MapPin size={24} />
+            </div>
+            <h3 className="font-bold text-lg text-slate-800">
+              Setores e Congregações
+            </h3>
+            <p className="text-sm text-slate-500 mt-2">
+              Cadastre setores, endereços e fotos.
+            </p>
+          </Link>
+
+          <Link
             href="/admin/usuarios"
             className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow cursor-pointer group"
           >
@@ -124,7 +143,7 @@ export default function AdminPage() {
             </div>
             <h3 className="font-bold text-lg text-slate-800">Usuários</h3>
             <p className="text-sm text-slate-500 mt-2">
-              Gerencie usuários do Firebase Auth.
+              Gerencie usuários do sistema.
             </p>
           </Link>
 
@@ -155,10 +174,34 @@ export default function AdminPage() {
           </Link>
         </div>
 
-        <div className="mt-10 bg-blue-50 border border-blue-100 rounded-2xl p-8 text-center">
-          <p className="text-blue-800 font-medium">
-            Funcionalidades em desenvolvimento do painel.
-          </p>
+        <div className="mt-10 bg-white border border-slate-100 rounded-2xl p-6 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">
+                Mapa das Congregações
+              </h2>
+              <p className="text-sm text-slate-500">
+                Visualização interna para planejamento e acompanhamento.
+              </p>
+            </div>
+          </div>
+          {adminMapUrl ? (
+            <div className="w-full overflow-hidden rounded-2xl border border-slate-100">
+              <iframe
+                src={adminMapUrl}
+                width="100%"
+                height="480"
+                className="w-full h-[480px] border-0"
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+                title="Mapa privado das congregações"
+              />
+            </div>
+          ) : (
+            <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl p-6 text-center text-slate-500">
+              Adicione o link do mapa privado em Configurações para exibir aqui.
+            </div>
+          )}
         </div>
       </div>
     </main>
