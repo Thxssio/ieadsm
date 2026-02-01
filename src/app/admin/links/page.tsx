@@ -17,6 +17,7 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useToast } from "@/components/ui/Toast";
 import { db, storage } from "@/lib/firebase/client";
+import { deleteStorageObject } from "@/lib/firebase/storageUtils";
 
 type LinkDoc = {
   id: string;
@@ -70,6 +71,7 @@ export default function AdminLinksPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [isDraggingIcon, setIsDraggingIcon] = useState(false);
+  const [previousIcon, setPreviousIcon] = useState("");
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
@@ -133,11 +135,15 @@ export default function AdminLinksPage() {
     try {
       if (editingId) {
         await updateDoc(doc(db, "links", editingId), payload);
+        if (previousIcon && previousIcon !== form.icon) {
+          await deleteStorageObject(previousIcon);
+        }
       } else {
         await addDoc(collection(db, "links"), payload);
       }
       setForm(emptyForm);
       setEditingId(null);
+      setPreviousIcon("");
       pushToast({
         type: "success",
         title: isEditing ? "Link atualizado" : "Link adicionado",
@@ -157,6 +163,7 @@ export default function AdminLinksPage() {
   const handleEdit = (item: LinkDoc) => {
     setEditingId(item.id);
     setUploadError("");
+    setPreviousIcon(item.icon || "");
     setForm({
       text: item.text || "",
       href: item.href || "",
@@ -167,6 +174,7 @@ export default function AdminLinksPage() {
 
   const handleCancel = () => {
     setEditingId(null);
+    setPreviousIcon("");
     setForm(emptyForm);
     setUploadError("");
   };
@@ -183,7 +191,11 @@ export default function AdminLinksPage() {
     const ok = window.confirm("Deseja excluir este link?");
     if (!ok) return;
     try {
+      const target = items.find((item) => item.id === itemId);
       await deleteDoc(doc(db, "links", itemId));
+      if (target?.icon) {
+        await deleteStorageObject(target.icon);
+      }
       pushToast({
         type: "success",
         title: "Link removido",
@@ -401,6 +413,19 @@ export default function AdminLinksPage() {
                       <span className="text-xs text-slate-500">
                         Enviando imagem...
                       </span>
+                    ) : null}
+                    {form.icon ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void deleteStorageObject(form.icon);
+                          setForm((prev) => ({ ...prev, icon: "" }));
+                          setPreviousIcon("");
+                        }}
+                        className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                      >
+                        Remover imagem
+                      </button>
                     ) : null}
                   </div>
                   {uploadError ? (

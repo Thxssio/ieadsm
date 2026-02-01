@@ -594,19 +594,6 @@ export default function AdminSettingsPage() {
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Setores e congregações
-                </label>
-                <input
-                  type="text"
-                  value={form.institutionalSectorsTitle}
-                  onChange={(event) =>
-                    handleChange("institutionalSectorsTitle", event.target.value)
-                  }
-                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
-                />
-              </div>
             </div>
           </section>
 
@@ -730,26 +717,6 @@ export default function AdminSettingsPage() {
                 value={form.institutionalAdvisoryContent}
                 onChange={(event) =>
                   handleChange("institutionalAdvisoryContent", event.target.value)
-                }
-                rows={12}
-                className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
-              />
-            </div>
-          </section>
-
-          <section className="space-y-4">
-            <h2 className="text-xl font-bold text-slate-900">
-              Setores e congregações
-            </h2>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Conteúdo (uma linha por item; inicie com "SETOR 01 | NOME" e
-                abaixo liste as congregações)
-              </label>
-              <textarea
-                value={form.institutionalSectorsContent}
-                onChange={(event) =>
-                  handleChange("institutionalSectorsContent", event.target.value)
                 }
                 rows={12}
                 className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"

@@ -18,6 +18,7 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useToast } from "@/components/ui/Toast";
 import { db, storage } from "@/lib/firebase/client";
+import { deleteStorageObject } from "@/lib/firebase/storageUtils";
 
 const IMAGE_OPTIONS = [
   { label: "Capa padrão", value: "/capa.png" },
@@ -75,6 +76,7 @@ export default function AdminNewsPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [isDraggingImage, setIsDraggingImage] = useState(false);
+  const [previousImage, setPreviousImage] = useState("");
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
@@ -133,6 +135,9 @@ export default function AdminNewsPage() {
           image: form.image,
           updatedAt: serverTimestamp(),
         });
+        if (previousImage && previousImage !== form.image) {
+          await deleteStorageObject(previousImage);
+        }
       } else {
         await addDoc(collection(db, "news"), {
           title: form.title.trim(),
@@ -145,6 +150,7 @@ export default function AdminNewsPage() {
       }
       setForm(emptyForm);
       setEditingId(null);
+      setPreviousImage("");
       pushToast({
         type: "success",
         title: isEditing ? "Notícia atualizada" : "Notícia publicada",
@@ -163,6 +169,7 @@ export default function AdminNewsPage() {
 
   const handleEdit = (post: NewsPost) => {
     setEditingId(post.id);
+    setPreviousImage(post.image || "");
     setForm({
       title: post.title || "",
       excerpt: post.excerpt || "",
@@ -173,6 +180,7 @@ export default function AdminNewsPage() {
 
   const handleCancel = () => {
     setEditingId(null);
+    setPreviousImage("");
     setForm(emptyForm);
   };
 
@@ -188,7 +196,11 @@ export default function AdminNewsPage() {
     const ok = window.confirm("Deseja excluir esta notícia?");
     if (!ok) return;
     try {
+      const target = posts.find((item) => item.id === postId);
       await deleteDoc(doc(db, "news", postId));
+      if (target?.image) {
+        await deleteStorageObject(target.image);
+      }
       pushToast({
         type: "success",
         title: "Notícia removida",
@@ -404,6 +416,19 @@ export default function AdminNewsPage() {
                     <span className="text-xs text-slate-500">
                       Enviando imagem...
                     </span>
+                  ) : null}
+                  {form.image ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void deleteStorageObject(form.image);
+                        setForm((prev) => ({ ...prev, image: defaultImage }));
+                        setPreviousImage("");
+                      }}
+                      className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                    >
+                      Remover imagem
+                    </button>
                   ) : null}
                 </div>
                 {uploadError && (

@@ -14,6 +14,7 @@ import {
   Megaphone,
   Settings,
   Users,
+  UserPlus,
 } from "lucide-react";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
@@ -155,6 +156,19 @@ export default function AdminPage() {
             <h3 className="font-bold text-lg text-slate-800">Patrimônio</h3>
             <p className="text-sm text-slate-500 mt-2">
               Controle de itens e etiquetas com QR.
+            </p>
+          </Link>
+
+          <Link
+            href="/admin/membros"
+            className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow cursor-pointer group"
+          >
+            <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-amber-600 group-hover:text-white transition-colors">
+              <UserPlus size={24} />
+            </div>
+            <h3 className="font-bold text-lg text-slate-800">Membros</h3>
+            <p className="text-sm text-slate-500 mt-2">
+              Cadastros do censo e formulários.
             </p>
           </Link>
 

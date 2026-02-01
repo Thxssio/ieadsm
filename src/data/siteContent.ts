@@ -45,6 +45,9 @@ export type SiteSettings = {
   institutionalAdvisoryContent: string;
   institutionalSectorsTitle: string;
   institutionalSectorsContent: string;
+  censusOpen: boolean;
+  censusTitle: string;
+  censusDescription: string;
 };
 
 const EMPTY_SITE_SETTINGS: SiteSettings = {
@@ -92,6 +95,9 @@ const EMPTY_SITE_SETTINGS: SiteSettings = {
   institutionalAdvisoryContent: "",
   institutionalSectorsTitle: "",
   institutionalSectorsContent: "",
+  censusOpen: false,
+  censusTitle: "",
+  censusDescription: "",
 };
 
 export const seedSiteSettings: SiteSettings = {
@@ -215,6 +221,10 @@ Passaram-se muitos anos, daquele primeiro culto (1927) e a Igreja Assembleia de 
   institutionalSectorsTitle: "Setores e Congregações",
   institutionalSectorsContent:
     "SETOR 01 | MATRIZ\nCong. Matriz\nCong. Belém\nCong. Cafarnaum\nCong. Galiléia\n\nSETOR 02 | SCHIRMER\nCong. Schirmer\n\nSETOR 03 | ITARARÉ\nCong. Itararé\n\nSETOR 04 | CAMPESTRE\nCong. Campestre\n\nSETOR 05 | SALGADO FILHO\nCong. Salgado Filho\n\nSETOR 06 | VITÓRIA\nCong. Vitória\n\nSETOR 07 | BELA UNIÃO\nCong. Bela União\n\nSETOR 08 | BRENNER\nCong. Brenner\nCong. Divina Providência\n\nSETOR 09 | OLIVEIRA\nCong. Oliveira\n\nSETOR 10 | LÍDIA\nCong. Lídia\n\nSETOR 11 | ALTO DA BOA VISTA\nCong. Alto da Boa Vista\n\nSETOR 12 | PÔR DO SOL\nCong. Pôr do Sol\n\nSETOR 13 | NÚCLEO CENTRAL\nCong. Núcleo Central\n\nSETOR 14 | CARAMELO\nCong. Caramelo\n\nSETOR 15 | P. P. MACHADO\nCong. P. P. Machado\n\nSETOR 16 | TANCREDO NEVES\nCong. Tancredo Neves\n\nSETOR 17 | CATARINA\nCong. Catarina\n\nSETOR 18 | DUQUE DE CAXIAS\nCong. Duque de Caxias\n\nSETOR 19 | URLÂNDIA\nCong. Urlândia\n\nSETOR 20 | TOMAZETTI\nCong. Tomazetti\n\nSETOR 21 | TROPICAL\nCong. Tropical\n\nSETOR 22 | LORENZI\nCong. Lorenzi\nCong. Desbravadores\n\nSETOR 23 | SEVERO\nCong. Severo\n\nSETOR 24 | PASSO DAS TROPAS\nCong. Passo das Tropas\nCong. Ipiranga\n\nSETOR 25 | CAROLINA\nCong. Carolina\n\nSETOR 26 | BOCA DO MONTE\nCong. Boca do Monte\n\nSETOR 27 | SANTA MARTA\nCong. Santa Marta\nCong. 7 de Dezembro\nCong. Adalmo Genro",
+  censusOpen: true,
+  censusTitle: "Censo de Membros",
+  censusDescription:
+    "Preencha o formulário do censo para atualizar os seus dados e apoiar o planejamento da igreja.",
 };
 
 export const defaultSiteSettings: SiteSettings = EMPTY_SITE_SETTINGS;

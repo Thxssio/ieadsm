@@ -17,6 +17,7 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useToast } from "@/components/ui/Toast";
 import { db, storage } from "@/lib/firebase/client";
+import { deleteStorageObject } from "@/lib/firebase/storageUtils";
 
 type BoardMemberDoc = {
   id: string;
@@ -66,6 +67,7 @@ export default function AdminBoardPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
+  const [previousPhoto, setPreviousPhoto] = useState("");
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
@@ -125,11 +127,15 @@ export default function AdminBoardPage() {
     try {
       if (editingId) {
         await updateDoc(doc(db, "boardMembers", editingId), payload);
+        if (previousPhoto && previousPhoto !== form.photo) {
+          await deleteStorageObject(previousPhoto);
+        }
       } else {
         await addDoc(collection(db, "boardMembers"), payload);
       }
       setForm(emptyForm);
       setEditingId(null);
+      setPreviousPhoto("");
       pushToast({
         type: "success",
         title: isEditing ? "Membro atualizado" : "Membro adicionado",
@@ -150,6 +156,7 @@ export default function AdminBoardPage() {
 
   const handleEdit = (item: BoardMemberDoc) => {
     setEditingId(item.id);
+    setPreviousPhoto(item.photo || "");
     setForm({
       role: item.role || "",
       name: item.name || "",
@@ -160,6 +167,7 @@ export default function AdminBoardPage() {
 
   const handleCancel = () => {
     setEditingId(null);
+    setPreviousPhoto("");
     setForm(emptyForm);
   };
 
@@ -226,7 +234,11 @@ export default function AdminBoardPage() {
     const ok = window.confirm("Deseja excluir este membro da diretoria?");
     if (!ok) return;
     try {
+      const target = items.find((item) => item.id === itemId);
       await deleteDoc(doc(db, "boardMembers", itemId));
+      if (target?.photo) {
+        await deleteStorageObject(target.photo);
+      }
       pushToast({
         type: "success",
         title: "Membro removido",
@@ -378,6 +390,19 @@ export default function AdminBoardPage() {
                       <span className="text-xs text-slate-500">
                         Enviando imagem...
                       </span>
+                    ) : null}
+                    {form.photo ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void deleteStorageObject(form.photo);
+                          setForm((prev) => ({ ...prev, photo: "" }));
+                          setPreviousPhoto("");
+                        }}
+                        className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                      >
+                        Remover foto
+                      </button>
                     ) : null}
                   </div>
                   {uploadError && (

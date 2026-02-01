@@ -1,0 +1,1857 @@
+"use client";
+
+import { useMemo, useState, type FormEvent } from "react";
+import {
+  addDoc,
+  collection,
+  doc,
+  getDocs,
+  limit,
+  query,
+  runTransaction,
+  updateDoc,
+  where,
+} from "firebase/firestore";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { UserPlus } from "lucide-react";
+import { db, storage } from "@/lib/firebase/client";
+import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
+import { useCongregations } from "@/lib/firebase/useCongregations";
+import { deleteStorageObject } from "@/lib/firebase/storageUtils";
+
+type ChildInfo = {
+  name: string;
+  cpf: string;
+};
+
+type CensusFormState = {
+  registroTipo: string;
+  registroTipoOutro: string;
+  idInterno: string;
+  congregacao: string;
+  setor: string;
+  name: string;
+  email: string;
+  telefone: string;
+  celular: string;
+  cpf: string;
+  rg: string;
+  tituloEleitor: string;
+  endereco: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
+  cidade: string;
+  uf: string;
+  cep: string;
+  pai: string;
+  mae: string;
+  cpfPai: string;
+  cpfMae: string;
+  isOrphan: boolean;
+  isOrphanFather: boolean;
+  nacionalidade: string;
+  profissao: string;
+  grauInstrucao: string;
+  sexo: string;
+  dataNascimento: string;
+  naturalidade: string;
+  estadoCivil: string;
+  dtCasamento: string;
+  qtdeFilhos: string;
+  nomeConjuge: string;
+  profissaoConjuge: string;
+  grauInstrucaoConjuge: string;
+  dataNascimentoConjuge: string;
+  cpfConjuge: string;
+  filhos: ChildInfo[];
+  dataConversao: string;
+  batizadoEspiritoSanto: boolean;
+  dataBatismoEspiritoSanto: string;
+  origem: string;
+  informacoes: string;
+  localBatismo: string;
+  dataBatismo: string;
+  recebimento: string;
+  dataRecebimento: string;
+  autorizacao: boolean;
+  photo: string;
+  usoImagem: boolean;
+};
+
+type CensusFormSectionProps = {
+  variant?: "section" | "modal";
+};
+
+type CensusRecord = Partial<CensusFormState> & {
+  cpfNormalized?: string;
+};
+
+const createEmptyForm = (): CensusFormState => ({
+  registroTipo: "Admissão",
+  registroTipoOutro: "",
+  idInterno: "",
+  congregacao: "Matriz",
+  setor: "Setor 01",
+  name: "",
+  email: "",
+  telefone: "",
+  celular: "",
+  cpf: "",
+  rg: "",
+  tituloEleitor: "",
+  endereco: "",
+  numero: "",
+  complemento: "",
+  bairro: "",
+  cidade: "",
+  uf: "",
+  cep: "",
+  pai: "",
+  mae: "",
+  cpfPai: "",
+  cpfMae: "",
+  isOrphan: false,
+  isOrphanFather: false,
+  nacionalidade: "",
+  profissao: "",
+  grauInstrucao: "",
+  sexo: "",
+  dataNascimento: "",
+  naturalidade: "",
+  estadoCivil: "",
+  dtCasamento: "",
+  qtdeFilhos: "",
+  nomeConjuge: "",
+  profissaoConjuge: "",
+  grauInstrucaoConjuge: "",
+  dataNascimentoConjuge: "",
+  cpfConjuge: "",
+  filhos: [],
+  dataConversao: "",
+  batizadoEspiritoSanto: false,
+  dataBatismoEspiritoSanto: "",
+  origem: "",
+  informacoes: "",
+  localBatismo: "",
+  dataBatismo: "",
+  recebimento: "",
+  dataRecebimento: "",
+  autorizacao: false,
+  photo: "",
+  usoImagem: false,
+});
+
+const safePhoto = (photo?: string) => {
+  if (!photo) return "";
+  if (photo.startsWith("http://") || photo.startsWith("https://")) return photo;
+  if (!photo.startsWith("/")) return "";
+  return encodeURI(photo);
+};
+
+const registroOptions = [
+  "Atualização",
+  "Batismo",
+  "Admissão",
+  "Reconciliação",
+  "Transferência",
+  "Outros",
+];
+
+const normalizeCpf = (value: string) => value.replace(/\D/g, "");
+
+const formatCpf = (value: string) => {
+  const normalized = normalizeCpf(value);
+  if (normalized.length === 0) return "";
+  if (normalized.length <= 3) return normalized;
+  if (normalized.length <= 6) return `${normalized.slice(0, 3)}.${normalized.slice(3)}`;
+  if (normalized.length <= 9) return `${normalized.slice(0, 3)}.${normalized.slice(3, 6)}.${normalized.slice(6)}`;
+  return `${normalized.slice(0, 3)}.${normalized.slice(3, 6)}.${normalized.slice(6, 9)}-${normalized.slice(9, 11)}`;
+};
+
+const formatDate = (value: string) => {
+  if (!value) return "";
+  // Se vem no formato YYYY-MM-DD (do input date), converte para DD/MM/YYYY
+  if (value.includes("-")) {
+    const [year, month, day] = value.split("-");
+    return `${day}/${month}/${year}`;
+  }
+  // Se já está formatado, retorna como está
+  return value;
+};
+
+const parseDateToISO = (value: string) => {
+  // Converte DD/MM/YYYY para YYYY-MM-DD para o input date
+  if (!value) return "";
+  if (value.includes("-")) return value; // Já está em ISO
+  const parts = value.split("/");
+  if (parts.length !== 3) return "";
+  const [day, month, year] = parts;
+  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+};
+
+const sexoOptions = ["Masculino", "Feminino", "Outro"];
+
+const estadoCivilOptions = [
+  "Solteiro(a)",
+  "Casado(a)",
+  "Divorciado(a)",
+  "Viúvo(a)",
+  "Separado(a)",
+  "Outro",
+];
+
+const mapRecordToForm = (
+  record: CensusRecord,
+  fallbackCpf: string
+): CensusFormState => {
+  const base = createEmptyForm();
+  const { cpfNormalized, ...rest } = record;
+  const filhos = Array.isArray(rest.filhos)
+    ? rest.filhos.map((child) => ({
+        name: typeof child?.name === "string" ? child.name : "",
+        cpf: typeof child?.cpf === "string" ? child.cpf : "",
+      }))
+    : [];
+  const cpfValue =
+    (typeof rest.cpf === "string" && rest.cpf.trim()) ||
+    (typeof cpfNormalized === "string" && cpfNormalized.trim()) ||
+    fallbackCpf;
+
+  return {
+    ...base,
+    ...rest,
+    filhos,
+    cpf: cpfValue,
+    registroTipo: "Atualização",
+    registroTipoOutro: "",
+    autorizacao: false,
+    idInterno: typeof rest.idInterno === "string" ? rest.idInterno : "",
+    isOrphan: Boolean(rest.isOrphan),
+    isOrphanFather: Boolean(rest.isOrphanFather),
+    batizadoEspiritoSanto: Boolean(rest.batizadoEspiritoSanto),
+    usoImagem: Boolean(rest.usoImagem),
+  };
+};
+
+export default function CensusFormSection({
+  variant = "section",
+}: CensusFormSectionProps) {
+  const { settings } = useSiteSettings();
+  const { items: congregations } = useCongregations();
+  const [form, setForm] = useState<CensusFormState>(() => createEmptyForm());
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState("");
+  const [submittedId, setSubmittedId] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [cpfLookupStatus, setCpfLookupStatus] = useState<
+    "idle" | "loading" | "found" | "not-found" | "error"
+  >("idle");
+  const [cpfLookupError, setCpfLookupError] = useState("");
+  const [lastCpfLookup, setLastCpfLookup] = useState("");
+  const [cepLookupStatus, setCepLookupStatus] = useState<
+    "idle" | "loading" | "found" | "not-found" | "error"
+  >("idle");
+  const [cepLookupError, setCepLookupError] = useState("");
+  const [lastCepLookup, setLastCepLookup] = useState("");
+  const [isEditingExisting, setIsEditingExisting] = useState(false);
+  const [existingDocId, setExistingDocId] = useState<string | null>(null);
+
+  const congregationOptions = useMemo(
+    () =>
+      [...congregations]
+        .map((item) => item.name)
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b)),
+    [congregations]
+  );
+
+  const sectorOptions = useMemo(() => {
+    return Array.from(
+      new Set(congregations.map((item) => item.sector).filter(Boolean))
+    ).sort((a, b) => a.localeCompare(b));
+  }, [congregations]);
+
+  const canSubmit =
+    form.name.trim().length > 0 &&
+    form.congregacao.trim().length > 0 &&
+    form.setor.trim().length > 0 &&
+    form.autorizacao;
+
+  const addChild = () => {
+    setForm((prev) => ({
+      ...prev,
+      filhos: [...prev.filhos, { name: "", cpf: "" }],
+    }));
+  };
+
+  const updateChild = (index: number, key: keyof ChildInfo, value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      filhos: prev.filhos.map((child, idx) =>
+        idx === index ? { ...child, [key]: value } : child
+      ),
+    }));
+  };
+
+  const removeChild = (index: number) => {
+    setForm((prev) => ({
+      ...prev,
+      filhos: prev.filhos.filter((_, idx) => idx !== index),
+    }));
+  };
+
+  const uploadPhoto = async (file: File) => {
+    if (!storage) {
+      setUploadError("Storage não configurado.");
+      return;
+    }
+    setUploading(true);
+    setUploadError("");
+    const previous = form.photo;
+    try {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+      const fileRef = ref(
+        storage,
+        `uploads/census/${Date.now()}-${safeName}`
+      );
+      await uploadBytes(fileRef, file, { contentType: file.type });
+      const url = await getDownloadURL(fileRef);
+      setForm((prev) => ({ ...prev, photo: url }));
+      if (previous && previous !== url) {
+        await deleteStorageObject(previous);
+      }
+    } catch (err) {
+      setUploadError("Falha ao enviar a foto. Tente novamente.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const getNextInternalId = async () => {
+    if (!db) return "";
+    const counterRef = doc(db, "censusCounters", "members");
+    const nextId = await runTransaction(db, async (tx) => {
+      const snap = await tx.get(counterRef);
+      if (!snap.exists()) {
+        tx.set(counterRef, { nextId: 2 });
+        return 1;
+      }
+      const data = snap.data() as { nextId?: number };
+      const current = Number(data.nextId ?? 1);
+      const value = Number.isNaN(current) || current < 1 ? 1 : current;
+      tx.set(counterRef, { nextId: value + 1 }, { merge: true });
+      return value;
+    });
+    return String(nextId);
+  };
+
+  const handleCpfLookup = async (rawCpf: string) => {
+    if (!db) return;
+    const normalized = normalizeCpf(rawCpf);
+    if (normalized.length !== 11) return;
+    if (normalized === lastCpfLookup && cpfLookupStatus !== "error") return;
+
+    setCpfLookupStatus("loading");
+    setCpfLookupError("");
+    setLastCpfLookup(normalized);
+
+    try {
+      const censusRef = collection(db, "censusMembers");
+      let snap = await getDocs(
+        query(censusRef, where("cpfNormalized", "==", normalized), limit(1))
+      );
+      if (snap.empty) {
+        snap = await getDocs(
+          query(censusRef, where("cpf", "==", normalized), limit(1))
+        );
+      }
+      if (snap.empty && rawCpf.trim()) {
+        snap = await getDocs(
+          query(censusRef, where("cpf", "==", rawCpf.trim()), limit(1))
+        );
+      }
+
+      if (!snap.empty) {
+        const data = snap.docs[0].data() as CensusRecord;
+        const docId = snap.docs[0].id;
+        // Mescla os dados encontrados com o formulário atual, permitindo edição
+        setForm((prev) => {
+          const mapped = mapRecordToForm(data, prev.cpf || rawCpf);
+          return {
+            ...mapped,
+            registroTipo: prev.registroTipo, // Mantém o tipo de registro escolhido
+            autorizacao: prev.autorizacao, // Mantém o status da autorização LGPD
+          };
+        });
+        setCpfLookupStatus("found");
+        setIsEditingExisting(true);
+        setExistingDocId(docId);
+      } else {
+        setCpfLookupStatus("not-found");
+        setIsEditingExisting(false);
+      }
+    } catch (err) {
+      setCpfLookupError("Não foi possível buscar este CPF. Tente novamente.");
+      setCpfLookupStatus("error");
+      setIsEditingExisting(false);
+    }
+  };
+
+  const handleCpfChange = (value: string) => {
+    setForm((prev) => ({ ...prev, cpf: value }));
+    setError("");
+    setSuccess(false);
+    setSubmittedId("");
+    setUploadError("");
+
+    const normalized = normalizeCpf(value);
+    if (normalized !== lastCpfLookup) {
+      setCpfLookupStatus("idle");
+      setCpfLookupError("");
+      setIsEditingExisting(false);
+      setExistingDocId(null);
+    }
+
+    if (normalized.length === 11 && cpfLookupStatus !== "loading") {
+      void handleCpfLookup(value);
+    }
+  };
+
+  const handleCepLookup = async (rawCep: string) => {
+    const normalized = rawCep.replace(/\D/g, "");
+    if (normalized.length !== 8) return;
+    if (normalized === lastCepLookup && cepLookupStatus !== "error") return;
+
+    setCepLookupStatus("loading");
+    setCepLookupError("");
+    setLastCepLookup(normalized);
+
+    try {
+      const response = await fetch(
+        `https://viacep.com.br/ws/${normalized}/json/`
+      );
+      if (!response.ok) {
+        setCepLookupStatus("not-found");
+        setCepLookupError("CEP não encontrado.");
+        return;
+      }
+
+      const data = await response.json();
+
+      if (data.erro) {
+        setCepLookupStatus("not-found");
+        setCepLookupError("CEP não encontrado.");
+        return;
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        bairro: data.bairro || prev.bairro,
+        cidade: data.localidade || prev.cidade,
+        uf: data.uf || prev.uf,
+        endereco: data.logradouro || prev.endereco,
+      }));
+      setCepLookupStatus("found");
+    } catch (err) {
+      setCepLookupError("Não foi possível buscar este CEP. Tente novamente.");
+      setCepLookupStatus("error");
+    }
+  };
+
+  const handleCepChange = (value: string) => {
+    setForm((prev) => ({ ...prev, cep: value }));
+    setError("");
+    setSuccess(false);
+    setSubmittedId("");
+    setUploadError("");
+
+    const normalized = value.replace(/\D/g, "");
+    if (normalized !== lastCepLookup) {
+      setCepLookupStatus("idle");
+      setCepLookupError("");
+    }
+
+    if (normalized.length === 8 && cepLookupStatus !== "loading") {
+      void handleCepLookup(value);
+    }
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+    setSuccess(false);
+    setSubmittedId("");
+    setUploadError("");
+
+    if (!db) {
+      setError("Firebase não configurado.");
+      return;
+    }
+
+    if (!canSubmit) {
+      setError("Preencha os campos obrigatórios e aceite a LGPD.");
+      return;
+    }
+
+    if (!form.isOrphan && !form.mae.trim()) {
+      setError("Informe o nome da mãe ou marque a opção de órfão.");
+      return;
+    }
+    if (!form.isOrphanFather && !form.pai.trim()) {
+      setError("Informe o nome do pai ou marque a opção de órfão.");
+      return;
+    }
+    if (form.registroTipo === "Outros" && !form.registroTipoOutro.trim()) {
+      setError("Informe o tipo de registro em 'Outros'.");
+      return;
+    }
+
+    setSaving(true);
+    // Se já tem um ID interno (registro existente), mantém; senão gera novo
+    const internalId = form.idInterno.trim() || await getNextInternalId();
+    if (!internalId) {
+      setSaving(false);
+      setError("Não foi possível gerar o ID interno. Tente novamente.");
+      return;
+    }
+
+    const cleanedChildren = form.filhos
+      .map((child) => ({
+        name: child.name.trim(),
+        cpf: child.cpf.trim(),
+      }))
+      .filter((child) => child.name || child.cpf);
+
+    const payload = {
+      ...form,
+      registroTipo: form.registroTipo.trim(),
+      registroTipoOutro: form.registroTipoOutro.trim(),
+      idInterno: internalId,
+      congregacao: form.congregacao.trim(),
+      setor: form.setor.trim(),
+      name: form.name.trim(),
+      email: form.email.trim(),
+      telefone: form.telefone.trim(),
+      celular: form.celular.trim(),
+      cpf: form.cpf.trim(),
+      cpfNormalized: normalizeCpf(form.cpf),
+      rg: form.rg.trim(),
+      tituloEleitor: form.tituloEleitor.trim(),
+      endereco: form.endereco.trim(),
+      numero: form.numero.trim(),
+      complemento: form.complemento.trim(),
+      bairro: form.bairro.trim(),
+      cidade: form.cidade.trim(),
+      uf: form.uf.trim(),
+      cep: form.cep.trim(),
+      pai: form.pai.trim(),
+      mae: form.mae.trim(),
+      cpfPai: form.cpfPai.trim(),
+      cpfMae: form.cpfMae.trim(),
+      nacionalidade: form.nacionalidade.trim(),
+      profissao: form.profissao.trim(),
+      grauInstrucao: form.grauInstrucao.trim(),
+      sexo: form.sexo.trim(),
+      dataNascimento: form.dataNascimento.trim(),
+      naturalidade: form.naturalidade.trim(),
+      estadoCivil: form.estadoCivil.trim(),
+      dtCasamento: form.dtCasamento.trim(),
+      qtdeFilhos: form.qtdeFilhos.trim(),
+      nomeConjuge: form.nomeConjuge.trim(),
+      profissaoConjuge: form.profissaoConjuge.trim(),
+      grauInstrucaoConjuge: form.grauInstrucaoConjuge.trim(),
+      dataNascimentoConjuge: form.dataNascimentoConjuge.trim(),
+      cpfConjuge: form.cpfConjuge.trim(),
+      filhos: cleanedChildren,
+      dataConversao: form.dataConversao.trim(),
+      dataBatismoEspiritoSanto: form.dataBatismoEspiritoSanto.trim(),
+      origem: form.origem.trim(),
+      informacoes: form.informacoes.trim(),
+      localBatismo: form.localBatismo.trim(),
+      dataBatismo: form.dataBatismo.trim(),
+      recebimento: form.recebimento.trim(),
+      dataRecebimento: form.dataRecebimento.trim(),
+      photo: form.photo.trim(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      if (existingDocId) {
+        // Atualizar documento existente
+        await updateDoc(doc(db, "censusMembers", existingDocId), payload);
+      } else {
+        // Criar novo documento
+        await addDoc(collection(db, "censusMembers"), payload);
+      }
+      setForm(createEmptyForm());
+      setCpfLookupStatus("idle");
+      setCpfLookupError("");
+      setLastCpfLookup("");
+      setIsEditingExisting(false);
+      setExistingDocId(null);
+      setSuccess(true);
+      setSubmittedId(internalId);
+    } catch (err) {
+      setError("Não foi possível enviar o censo. Tente novamente.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const title = settings.censusTitle || "Censo de Membros";
+  const description =
+    settings.censusDescription ||
+    "Preencha o formulário para atualizar seus dados.";
+  const isModal = variant === "modal";
+
+  const content = (
+    <div
+      className={
+        isModal
+          ? "p-6"
+          : "rounded-3xl border border-gray-200 bg-white p-8 shadow-sm"
+      }
+    >
+      {!isModal ? (
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+              <UserPlus className="h-6 w-6" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
+              <p className="mt-1 text-sm text-gray-500">{description}</p>
+            </div>
+          </div>
+          <span
+            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+              settings.censusOpen
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-gray-100 text-gray-500"
+            }`}
+          >
+            {settings.censusOpen ? "Censo aberto" : "Censo fechado"}
+          </span>
+        </div>
+      ) : null}
+
+        {!settings.censusOpen ? (
+          <div className="mt-8 rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-gray-500">
+            O formulário do censo está fechado no momento. Volte mais tarde.
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="mt-8 space-y-8">
+            {success ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                Formulário enviado com sucesso. Obrigado por contribuir!
+                {submittedId ? (
+                  <span className="block mt-1 font-semibold">
+                    ID interno: {submittedId}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+
+            {error ? (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {error}
+              </div>
+            ) : null}
+
+            <fieldset className="space-y-3">
+              <legend className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+                CPF
+              </legend>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  CPF (primeiro passo)
+                </label>
+                <input
+                  type="text"
+                  value={formatCpf(form.cpf)}
+                  onChange={(event) => handleCpfChange(event.target.value)}
+                  onBlur={() => {
+                    const normalized = normalizeCpf(form.cpf);
+                    if (normalized.length === 11) {
+                      void handleCpfLookup(form.cpf);
+                    }
+                  }}
+                  className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  placeholder="000.000.000-00"
+                />
+                <p className="mt-1 text-xs text-gray-400">
+                  Digite o CPF para localizar seus dados automaticamente.
+                </p>
+                {cpfLookupStatus === "loading" ? (
+                  <p className="mt-2 text-xs text-gray-500">
+                    Buscando CPF...
+                  </p>
+                ) : null}
+                {cpfLookupStatus === "found" ? (
+                  <p className="mt-2 text-xs text-emerald-600">
+                    Cadastro encontrado! Você pode editar todos os campos.
+                  </p>
+                ) : null}
+                {cpfLookupStatus === "not-found" ? (
+                  <p className="mt-2 text-xs text-gray-500">
+                    CPF não encontrado. Preencha o formulário normalmente.
+                  </p>
+                ) : null}
+                {cpfLookupStatus === "error" && cpfLookupError ? (
+                  <p className="mt-2 text-xs text-red-600">
+                    {cpfLookupError}
+                  </p>
+                ) : null}
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-4">
+              <legend className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+                Registro
+              </legend>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Tipo de registro
+                  </label>
+                  <select
+                    value={form.registroTipo}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        registroTipo: event.target.value,
+                        registroTipoOutro:
+                          event.target.value === "Outros"
+                            ? prev.registroTipoOutro
+                            : "",
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none disabled:bg-gray-100"
+                  >
+                    {registroOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {form.registroTipo === "Outros" ? (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Outros (especifique)
+                    </label>
+                    <input
+                      type="text"
+                      value={form.registroTipoOutro}
+                      onChange={(event) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          registroTipoOutro: event.target.value,
+                        }))
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                      placeholder="Descreva o tipo de registro"
+                      required
+                    />
+                  </div>
+                ) : null}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    ID interno
+                  </label>
+                  <input
+                    type="text"
+                    value={form.idInterno}
+                    readOnly
+                    className="w-full rounded-xl border border-gray-300 bg-gray-100 px-4 py-3 text-sm text-gray-600"
+                    placeholder="Gerado automaticamente ao enviar"
+                  />
+                  <p className="mt-1 text-xs text-gray-400">
+                    Gerado automaticamente.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Congregação
+                  </label>
+                  <input
+                    type="text"
+                    list="censo-congregacoes"
+                    value={form.congregacao}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      const match = congregations.find(
+                        (item) => item.name === value
+                      );
+                      setForm((prev) => ({
+                        ...prev,
+                        congregacao: value,
+                        setor: match?.sector ?? prev.setor,
+                      }));
+                    }}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none disabled:bg-gray-100"
+                    placeholder="Ex.: Cong. Matriz"
+                    required
+                  />
+                  <datalist id="censo-congregacoes">
+                    {congregationOptions.map((option) => (
+                      <option key={option} value={option} />
+                    ))}
+                  </datalist>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Setor
+                  </label>
+                  <input
+                    type="text"
+                    list="censo-setores"
+                    value={form.setor}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        setor: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                    placeholder="Ex.: Setor 01"
+                    required
+                  />
+                  <datalist id="censo-setores">
+                    {sectorOptions.map((option) => (
+                      <option key={option} value={option} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-4">
+              <legend className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+                Identificação e contato
+              </legend>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Nome completo
+                  </label>
+                  <input
+                    type="text"
+                    value={form.name}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, name: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                    placeholder="Nome completo"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        email: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                    placeholder="nome@email.com"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Telefone
+                  </label>
+                  <input
+                    type="text"
+                    value={form.telefone}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        telefone: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                    placeholder="(00) 0000-0000"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Celular
+                  </label>
+                  <input
+                    type="text"
+                    value={form.celular}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        celular: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                    placeholder="(00) 00000-0000"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    RG
+                  </label>
+                  <input
+                    type="text"
+                    value={form.rg}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, rg: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Título de eleitor
+                  </label>
+                  <input
+                    type="text"
+                    value={form.tituloEleitor}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        tituloEleitor: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-4">
+              <legend className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+                Endereço
+              </legend>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Endereço
+                  </label>
+                  <input
+                    type="text"
+                    value={form.endereco}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        endereco: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Número
+                    </label>
+                    <input
+                      type="text"
+                      value={form.numero}
+                      onChange={(event) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          numero: event.target.value,
+                        }))
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Complemento
+                    </label>
+                    <input
+                      type="text"
+                      value={form.complemento}
+                      onChange={(event) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          complemento: event.target.value,
+                        }))
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Bairro
+                  </label>
+                  <input
+                    type="text"
+                    value={form.bairro}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        bairro: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Cidade
+                  </label>
+                  <input
+                    type="text"
+                    value={form.cidade}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        cidade: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      UF
+                    </label>
+                    <input
+                      type="text"
+                      value={form.uf}
+                      onChange={(event) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          uf: event.target.value,
+                        }))
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm uppercase focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      CEP
+                    </label>
+                    <input
+                      type="text"
+                      value={form.cep}
+                      onChange={(event) => handleCepChange(event.target.value)}
+                      onBlur={() => {
+                        const normalized = form.cep.replace(/\D/g, "");
+                        if (normalized.length === 8) {
+                          void handleCepLookup(form.cep);
+                        }
+                      }}
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                      placeholder="00000-000"
+                    />
+                    <p className="mt-1 text-xs text-gray-400">
+                      Digite o CEP para preencher endereço automaticamente.
+                    </p>
+                    {cepLookupStatus === "loading" ? (
+                      <p className="mt-2 text-xs text-gray-500">
+                        Buscando CEP...
+                      </p>
+                    ) : null}
+                    {cepLookupStatus === "found" ? (
+                      <p className="mt-2 text-xs text-emerald-600">
+                        CEP encontrado. Revise os dados do endereço.
+                      </p>
+                    ) : null}
+                    {cepLookupStatus === "not-found" ? (
+                      <p className="mt-2 text-xs text-gray-500">
+                        CEP não encontrado. Preencha manualmente.
+                      </p>
+                    ) : null}
+                    {cepLookupStatus === "error" && cepLookupError ? (
+                      <p className="mt-2 text-xs text-red-600">
+                        {cepLookupError}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-4">
+              <legend className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+                Filiação
+              </legend>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Nome do pai
+                  </label>
+                  <input
+                    type="text"
+                    value={form.pai}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, pai: event.target.value }))
+                    }
+                    disabled={form.isOrphanFather}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    CPF do pai
+                  </label>
+                  <input
+                    type="text"
+                    value={formatCpf(form.cpfPai)}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        cpfPai: event.target.value,
+                      }))
+                    }
+                    disabled={form.isOrphanFather}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Nome da mãe
+                  </label>
+                  <input
+                    type="text"
+                    value={form.mae}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, mae: event.target.value }))
+                    }
+                    disabled={form.isOrphan}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none disabled:bg-gray-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    CPF da mãe
+                  </label>
+                  <input
+                    type="text"
+                    value={formatCpf(form.cpfMae)}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        cpfMae: event.target.value,
+                      }))
+                    }
+                    disabled={form.isOrphan}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none disabled:bg-gray-100"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-3 text-sm text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={form.isOrphanFather}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        isOrphanFather: event.target.checked,
+                      }))
+                    }
+                    className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  Não possui pai registrado (órfão)
+                </label>
+                <label className="flex items-center gap-3 text-sm text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={form.isOrphan}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        isOrphan: event.target.checked,
+                      }))
+                    }
+                    className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  Não possui mãe registrada (órfão)
+                </label>
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-4">
+              <legend className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+                Dados pessoais
+              </legend>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Nacionalidade
+                  </label>
+                  <input
+                    type="text"
+                    value={form.nacionalidade}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        nacionalidade: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Profissão
+                  </label>
+                  <input
+                    type="text"
+                    value={form.profissao}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        profissao: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Grau de instrução
+                  </label>
+                  <input
+                    type="text"
+                    value={form.grauInstrucao}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        grauInstrucao: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Sexo
+                  </label>
+                  <select
+                    value={form.sexo}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, sexo: event.target.value }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  >
+                    <option value="">Selecione</option>
+                    {sexoOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Data de nascimento
+                  </label>
+                  <input
+                    type="date"
+                    value={form.dataNascimento}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        dataNascimento: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                  {form.dataNascimento ? (
+                    <p className="mt-1 text-xs text-gray-500">
+                      {formatDate(form.dataNascimento)}
+                    </p>
+                  ) : null}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Naturalidade
+                  </label>
+                  <input
+                    type="text"
+                    value={form.naturalidade}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        naturalidade: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-4">
+              <legend className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+                Estado civil e família
+              </legend>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Estado civil
+                  </label>
+                  <select
+                    value={form.estadoCivil}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        estadoCivil: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  >
+                    <option value="">Selecione</option>
+                    {estadoCivilOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Data do casamento
+                  </label>
+                  <input
+                    type="date"
+                    value={form.dtCasamento}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        dtCasamento: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                  {form.dtCasamento ? (
+                    <p className="mt-1 text-xs text-gray-500">
+                      {formatDate(form.dtCasamento)}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Quantidade de filhos
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.qtdeFilhos}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        qtdeFilhos: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Nome do cônjuge
+                  </label>
+                  <input
+                    type="text"
+                    value={form.nomeConjuge}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        nomeConjuge: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    CPF do cônjuge
+                  </label>
+                  <input
+                    type="text"
+                    value={formatCpf(form.cpfConjuge)}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        cpfConjuge: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Profissão do cônjuge
+                  </label>
+                  <input
+                    type="text"
+                    value={form.profissaoConjuge}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        profissaoConjuge: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Grau de instrução (cônjuge)
+                  </label>
+                  <input
+                    type="text"
+                    value={form.grauInstrucaoConjuge}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        grauInstrucaoConjuge: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Nascimento do cônjuge
+                  </label>
+                  <input
+                    type="date"
+                    value={form.dataNascimentoConjuge}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        dataNascimentoConjuge: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                  {form.dataNascimentoConjuge ? (
+                    <p className="mt-1 text-xs text-gray-500">
+                      {formatDate(form.dataNascimentoConjuge)}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-4">
+              <legend className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+                Filhos
+              </legend>
+              {form.filhos.length === 0 ? (
+                <p className="text-sm text-gray-400">
+                  Nenhum filho adicionado ainda.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {form.filhos.map((child, index) => (
+                    <div
+                      key={`child-${index}`}
+                      className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_auto]"
+                    >
+                      <input
+                        type="text"
+                        value={child.name}
+                        onChange={(event) =>
+                          updateChild(index, "name", event.target.value)
+                        }
+                        className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                        placeholder="Nome do filho"
+                      />
+                      <input
+                        type="text"
+                        value={child.cpf}
+                        onChange={(event) =>
+                          updateChild(index, "cpf", event.target.value)
+                        }
+                        className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                        placeholder="CPF"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeChild(index)}
+                        className="rounded-xl border border-gray-200 px-4 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={addChild}
+                className="rounded-xl border border-indigo-200 px-4 py-2 text-sm font-semibold text-indigo-600 hover:bg-indigo-50"
+              >
+                Adicionar filho
+              </button>
+            </fieldset>
+
+            <fieldset className="space-y-4">
+              <legend className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+                Igreja
+              </legend>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Data de conversão
+                  </label>
+                  <input
+                    type="date"
+                    value={form.dataConversao}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        dataConversao: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                  {form.dataConversao ? (
+                    <p className="mt-1 text-xs text-gray-500">
+                      {formatDate(form.dataConversao)}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex items-center gap-3 pt-8">
+                  <input
+                    type="checkbox"
+                    checked={form.batizadoEspiritoSanto}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        batizadoEspiritoSanto: event.target.checked,
+                      }))
+                    }
+                    className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span className="text-sm text-gray-600">
+                    Batizado no Espírito Santo
+                  </span>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Data do batismo no Espírito Santo
+                  </label>
+                  <input
+                    type="date"
+                    value={form.dataBatismoEspiritoSanto}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        dataBatismoEspiritoSanto: event.target.value,
+                      }))
+                    }
+                    disabled={!form.batizadoEspiritoSanto}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none disabled:bg-gray-100"
+                  />
+                  {form.dataBatismoEspiritoSanto ? (
+                    <p className="mt-1 text-xs text-gray-500">
+                      {formatDate(form.dataBatismoEspiritoSanto)}
+                    </p>
+                  ) : null}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Origem
+                  </label>
+                  <input
+                    type="text"
+                    value={form.origem}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        origem: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Informações adicionais
+                </label>
+                <textarea
+                  value={form.informacoes}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      informacoes: event.target.value,
+                    }))
+                  }
+                  rows={4}
+                  className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                />
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-4">
+              <legend className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+                Batismo e recebimento
+              </legend>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Local do batismo
+                  </label>
+                  <input
+                    type="text"
+                    value={form.localBatismo}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        localBatismo: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Data do batismo
+                  </label>
+                  <input
+                    type="date"
+                    value={form.dataBatismo}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        dataBatismo: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                  {form.dataBatismo ? (
+                    <p className="mt-1 text-xs text-gray-500">
+                      {formatDate(form.dataBatismo)}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Recebimento
+                  </label>
+                  <input
+                    type="text"
+                    value={form.recebimento}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        recebimento: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Data do recebimento
+                  </label>
+                  <input
+                    type="date"
+                    value={form.dataRecebimento}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        dataRecebimento: event.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                  />
+                  {form.dataRecebimento ? (
+                    <p className="mt-1 text-xs text-gray-500">
+                      {formatDate(form.dataRecebimento)}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-4">
+              <legend className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+                LGPD
+              </legend>
+              <label className="flex items-center gap-3 text-sm text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={form.autorizacao}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      autorizacao: event.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  required
+                />
+                Autorizo o uso dos dados conforme a LGPD.
+              </label>
+            </fieldset>
+
+            <fieldset className="space-y-4">
+              <legend className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+                Foto e uso de imagem
+              </legend>
+
+              <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                  <div className="relative h-24 w-24 overflow-hidden rounded-2xl border border-gray-200 bg-white">
+                    <img
+                      src={safePhoto(form.photo) || "/logo.png"}
+                      alt="Foto do membro"
+                      className={`h-full w-full object-cover ${
+                        form.photo ? "" : "opacity-30 grayscale"
+                      }`}
+                    />
+                    {!form.photo ? (
+                      <div className="absolute inset-0 flex items-center justify-center text-[11px] font-semibold text-gray-500">
+                        Sem foto
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="flex-1 space-y-2">
+                    <p className="text-sm font-semibold text-gray-700">
+                      Enviar foto
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Clique no botão abaixo para selecionar uma imagem do seu
+                      celular/computador.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <input
+                        id="censo-photo-upload"
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) {
+                            void uploadPhoto(file);
+                          }
+                        }}
+                        className="sr-only"
+                      />
+                      <label
+                        htmlFor="censo-photo-upload"
+                        className="inline-flex items-center justify-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 transition cursor-pointer"
+                      >
+                        Escolher foto
+                      </label>
+                      {form.photo ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void deleteStorageObject(form.photo);
+                            setForm((prev) => ({ ...prev, photo: "" }));
+                          }}
+                          className="text-xs font-semibold text-gray-500 hover:text-gray-700"
+                        >
+                          Remover foto
+                        </button>
+                      ) : null}
+                    </div>
+                    {uploading ? (
+                      <span className="text-xs text-gray-500">
+                        Enviando foto...
+                      </span>
+                    ) : null}
+                    {uploadError ? (
+                      <span className="text-xs text-red-600">{uploadError}</span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              <label className="flex items-center gap-3 text-sm text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={form.usoImagem}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      usoImagem: event.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                Autorizo o uso da minha imagem.
+              </label>
+            </fieldset>
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="submit"
+                disabled={!canSubmit || saving}
+                className={`rounded-xl px-6 py-3 text-sm font-semibold text-white transition ${
+                  saving
+                    ? "bg-indigo-400"
+                    : "bg-indigo-600 hover:bg-indigo-700"
+                } disabled:cursor-not-allowed disabled:opacity-70`}
+              >
+                {saving ? "Enviando..." : "Enviar censo"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setForm(createEmptyForm());
+                  setError("");
+                  setSuccess(false);
+                }}
+                className="rounded-xl border border-gray-200 px-6 py-3 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                Limpar formulário
+              </button>
+            </div>
+          </form>
+        )}
+    </div>
+  );
+
+  return isModal ? (
+    content
+  ) : (
+    <section className="mx-auto max-w-5xl px-4 pb-16" id="censo">
+      {content}
+    </section>
+  );
+}
