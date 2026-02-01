@@ -25,6 +25,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useCongregations } from "@/lib/firebase/useCongregations";
 import { useDepartments } from "@/lib/firebase/useDepartments";
 import { db, storage } from "@/lib/firebase/client";
+import { deleteStorageObject, deleteStorageObjects } from "@/lib/firebase/storageUtils";
 
 const DEFAULT_PHOTO = "/logo.png";
 const LABEL_W_MM = 60;
@@ -361,10 +362,16 @@ export default function AdminPatrimonioPage() {
   };
 
   const handleRemovePhoto = (index: number) => {
-    setForm((prev) => ({
-      ...prev,
-      photos: prev.photos.filter((_, idx) => idx !== index),
-    }));
+    setForm((prev) => {
+      const target = prev.photos[index];
+      if (target) {
+        void deleteStorageObject(target);
+      }
+      return {
+        ...prev,
+        photos: prev.photos.filter((_, idx) => idx !== index),
+      };
+    });
   };
 
   const handleDelete = async (itemId: string) => {
@@ -379,7 +386,11 @@ export default function AdminPatrimonioPage() {
     const ok = window.confirm("Deseja excluir este patrimônio?");
     if (!ok) return;
     try {
+      const target = items.find((item) => item.id === itemId);
       await deleteDoc(doc(db, "patrimony", itemId));
+      if (target?.photos?.length) {
+        await deleteStorageObjects(target.photos);
+      }
       setSelectedIds((prev) => prev.filter((id) => id !== itemId));
       pushToast({
         type: "success",

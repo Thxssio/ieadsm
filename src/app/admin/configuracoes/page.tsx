@@ -105,23 +105,6 @@ export default function AdminSettingsPage() {
               Gerenciar diretoria
             </button>
           </div>
-          <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">
-                Setores e Congregações
-              </h2>
-              <p className="text-sm text-slate-500 mt-1">
-                Cadastre congregações, endereços e fotos.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => router.push("/admin/congregacoes")}
-              className="inline-flex items-center text-blue-600 font-bold hover:text-blue-800 transition-colors bg-blue-50 px-5 py-2.5 rounded-full shadow-sm hover:shadow-md"
-            >
-              Gerenciar congregações
-            </button>
-          </div>
         </div>
 
         <form
@@ -594,19 +577,6 @@ export default function AdminSettingsPage() {
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Setores e congregações
-                </label>
-                <input
-                  type="text"
-                  value={form.institutionalSectorsTitle}
-                  onChange={(event) =>
-                    handleChange("institutionalSectorsTitle", event.target.value)
-                  }
-                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
-                />
-              </div>
             </div>
           </section>
 
@@ -730,26 +700,6 @@ export default function AdminSettingsPage() {
                 value={form.institutionalAdvisoryContent}
                 onChange={(event) =>
                   handleChange("institutionalAdvisoryContent", event.target.value)
-                }
-                rows={12}
-                className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
-              />
-            </div>
-          </section>
-
-          <section className="space-y-4">
-            <h2 className="text-xl font-bold text-slate-900">
-              Setores e congregações
-            </h2>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Conteúdo (uma linha por item; inicie com "SETOR 01 | NOME" e
-                abaixo liste as congregações)
-              </label>
-              <textarea
-                value={form.institutionalSectorsContent}
-                onChange={(event) =>
-                  handleChange("institutionalSectorsContent", event.target.value)
                 }
                 rows={12}
                 className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"

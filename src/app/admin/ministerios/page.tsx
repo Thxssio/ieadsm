@@ -17,6 +17,7 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useToast } from "@/components/ui/Toast";
 import { db, storage } from "@/lib/firebase/client";
+import { deleteStorageObject } from "@/lib/firebase/storageUtils";
 
 type DepartmentDoc = {
   id: string;
@@ -69,6 +70,7 @@ export default function AdminMinisteriosPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [isDraggingLogo, setIsDraggingLogo] = useState(false);
+  const [previousLogo, setPreviousLogo] = useState("");
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
@@ -128,11 +130,15 @@ export default function AdminMinisteriosPage() {
     try {
       if (editingId) {
         await updateDoc(doc(db, "departments", editingId), payload);
+        if (previousLogo && previousLogo !== form.logo) {
+          await deleteStorageObject(previousLogo);
+        }
       } else {
         await addDoc(collection(db, "departments"), payload);
       }
       setForm(emptyForm);
       setEditingId(null);
+      setPreviousLogo("");
       pushToast({
         type: "success",
         title: isEditing ? "Ministério atualizado" : "Ministério adicionado",
@@ -153,6 +159,7 @@ export default function AdminMinisteriosPage() {
 
   const handleEdit = (item: DepartmentDoc) => {
     setEditingId(item.id);
+    setPreviousLogo(item.logo || "");
     setForm({
       title: item.title || "",
       description: item.description || "",
@@ -163,6 +170,7 @@ export default function AdminMinisteriosPage() {
 
   const handleCancel = () => {
     setEditingId(null);
+    setPreviousLogo("");
     setForm(emptyForm);
   };
 
@@ -229,7 +237,11 @@ export default function AdminMinisteriosPage() {
     const ok = window.confirm("Deseja excluir este ministério?");
     if (!ok) return;
     try {
+      const target = items.find((item) => item.id === itemId);
       await deleteDoc(doc(db, "departments", itemId));
+      if (target?.logo) {
+        await deleteStorageObject(target.logo);
+      }
       pushToast({
         type: "success",
         title: "Ministério removido",
@@ -389,6 +401,19 @@ export default function AdminMinisteriosPage() {
                       <span className="text-xs text-slate-500">
                         Enviando imagem...
                       </span>
+                    ) : null}
+                    {form.logo ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void deleteStorageObject(form.logo);
+                          setForm((prev) => ({ ...prev, logo: "" }));
+                          setPreviousLogo("");
+                        }}
+                        className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                      >
+                        Remover logo
+                      </button>
                     ) : null}
                   </div>
                   {uploadError && (

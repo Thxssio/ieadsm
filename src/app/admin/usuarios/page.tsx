@@ -256,12 +256,29 @@ export default function AdminUsersPage() {
     }
   };
 
-  // Filter users based on search
-  const filteredUsers = users.filter((u) =>
-    u.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.displayName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.uid.includes(searchTerm)
-  );
+  const toTimestamp = (value?: string) => {
+    if (!value) return 0;
+    const date = new Date(value);
+    const time = date.getTime();
+    return Number.isNaN(time) ? 0 : time;
+  };
+
+  // Filter users based on search + sort by latest access
+  const filteredUsers = users
+    .filter((u) =>
+      u.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      u.displayName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      u.uid.includes(searchTerm)
+    )
+    .sort((a, b) => {
+      const lastA = toTimestamp(a.lastSignIn);
+      const lastB = toTimestamp(b.lastSignIn);
+      if (lastA !== lastB) return lastB - lastA;
+      const createdA = toTimestamp(a.createdAt);
+      const createdB = toTimestamp(b.createdAt);
+      if (createdA !== createdB) return createdB - createdA;
+      return a.uid.localeCompare(b.uid);
+    });
 
   const onlineCount = users.reduce((total, current) => {
     return total + (isOnline(current.uid) ? 1 : 0);

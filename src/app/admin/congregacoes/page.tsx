@@ -14,6 +14,7 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useToast } from "@/components/ui/Toast";
 import { db, storage } from "@/lib/firebase/client";
+import { deleteStorageObject } from "@/lib/firebase/storageUtils";
 
 type CongregationDoc = {
   id: string;
@@ -79,6 +80,7 @@ export default function AdminCongregacoesPage() {
   const [cepLoading, setCepLoading] = useState(false);
   const [cepError, setCepError] = useState("");
   const [lastCepLookup, setLastCepLookup] = useState("");
+  const [previousPhoto, setPreviousPhoto] = useState("");
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
@@ -156,11 +158,15 @@ export default function AdminCongregacoesPage() {
     try {
       if (editingId) {
         await updateDoc(doc(db, "congregations", editingId), payload);
+        if (previousPhoto && previousPhoto !== form.photo) {
+          await deleteStorageObject(previousPhoto);
+        }
       } else {
         await addDoc(collection(db, "congregations"), payload);
       }
       setForm(emptyForm);
       setEditingId(null);
+      setPreviousPhoto("");
       pushToast({
         type: "success",
         title: isEditing ? "Congregação atualizada" : "Congregação adicionada",
@@ -187,6 +193,7 @@ export default function AdminCongregacoesPage() {
     }, 1200);
     setCepError("");
     setLastCepLookup("");
+    setPreviousPhoto(item.photo || "");
     setForm({
       sector: item.sector || "",
       sectorOrder: item.sectorOrder ?? 1,
@@ -208,6 +215,7 @@ export default function AdminCongregacoesPage() {
 
   const handleCancel = () => {
     setEditingId(null);
+    setPreviousPhoto("");
     setForm(emptyForm);
     setCepError("");
     setLastCepLookup("");
@@ -326,7 +334,11 @@ export default function AdminCongregacoesPage() {
     if (!ok) return;
     setDeletingId(itemId);
     try {
+      const target = items.find((item) => item.id === itemId);
       await deleteDoc(doc(db, "congregations", itemId));
+      if (target?.photo) {
+        await deleteStorageObject(target.photo);
+      }
       pushToast({
         type: "success",
         title: "Congregação removida",
@@ -531,6 +543,19 @@ export default function AdminCongregacoesPage() {
                       <span className="text-xs text-slate-500">
                         Enviando imagem...
                       </span>
+                    ) : null}
+                    {form.photo ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void deleteStorageObject(form.photo);
+                          setForm((prev) => ({ ...prev, photo: "" }));
+                          setPreviousPhoto("");
+                        }}
+                        className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                      >
+                        Remover foto
+                      </button>
                     ) : null}
                   </div>
                   {uploadError && (
