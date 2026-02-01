@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
 import {
   addDoc,
   collection,
@@ -28,6 +28,7 @@ type CensusFormState = {
   registroTipo: string;
   registroTipoOutro: string;
   idInterno: string;
+  cargo: string;
   congregacao: string;
   setor: string;
   name: string;
@@ -91,8 +92,9 @@ const createEmptyForm = (): CensusFormState => ({
   registroTipo: "Admissão",
   registroTipoOutro: "",
   idInterno: "",
-  congregacao: "Matriz",
-  setor: "Setor 01",
+  cargo: "membro",
+  congregacao: "",
+  setor: "",
   name: "",
   email: "",
   telefone: "",
@@ -244,6 +246,13 @@ export default function CensusFormSection({
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
   const [submittedId, setSubmittedId] = useState("");
+  const nameRef = useRef<HTMLInputElement>(null);
+  const congregacaoRef = useRef<HTMLSelectElement>(null);
+  const setorRef = useRef<HTMLSelectElement>(null);
+  const registroTipoOutroRef = useRef<HTMLInputElement>(null);
+  const paiRef = useRef<HTMLInputElement>(null);
+  const maeRef = useRef<HTMLInputElement>(null);
+  const autorizacaoRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [cpfLookupStatus, setCpfLookupStatus] = useState<
@@ -273,6 +282,24 @@ export default function CensusFormSection({
       new Set(congregations.map((item) => item.sector).filter(Boolean))
     ).sort((a, b) => a.localeCompare(b));
   }, [congregations]);
+
+  const congregacaoSelectOptions = useMemo(() => {
+    const options = [...congregationOptions];
+    const current = form.congregacao.trim();
+    if (current && !options.includes(current)) {
+      return [current, ...options];
+    }
+    return options;
+  }, [congregationOptions, form.congregacao]);
+
+  const setorSelectOptions = useMemo(() => {
+    const options = [...sectorOptions];
+    const current = form.setor.trim();
+    if (current && !options.includes(current)) {
+      return [current, ...options];
+    }
+    return options;
+  }, [sectorOptions, form.setor]);
 
   const canSubmit =
     form.name.trim().length > 0 &&
@@ -479,6 +506,13 @@ export default function CensusFormSection({
     }
   };
 
+  const focusField = <T extends HTMLElement>(ref: RefObject<T | null>) => {
+    const node = ref.current;
+    if (!node) return;
+    node.scrollIntoView({ behavior: "smooth", block: "center" });
+    node.focus();
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
@@ -493,19 +527,38 @@ export default function CensusFormSection({
 
     if (!canSubmit) {
       setError("Preencha os campos obrigatórios e aceite a LGPD.");
+      if (!form.name.trim()) {
+        focusField(nameRef);
+        return;
+      }
+      if (!form.congregacao.trim()) {
+        focusField(congregacaoRef);
+        return;
+      }
+      if (!form.setor.trim()) {
+        focusField(setorRef);
+        return;
+      }
+      if (!form.autorizacao) {
+        focusField(autorizacaoRef);
+        return;
+      }
       return;
     }
 
     if (!form.isOrphan && !form.mae.trim()) {
       setError("Informe o nome da mãe ou marque a opção de órfão.");
+      focusField(maeRef);
       return;
     }
     if (!form.isOrphanFather && !form.pai.trim()) {
       setError("Informe o nome do pai ou marque a opção de órfão.");
+      focusField(paiRef);
       return;
     }
     if (form.registroTipo === "Outros" && !form.registroTipoOutro.trim()) {
       setError("Informe o tipo de registro em 'Outros'.");
+      focusField(registroTipoOutroRef);
       return;
     }
 
@@ -525,11 +578,12 @@ export default function CensusFormSection({
       }))
       .filter((child) => child.name || child.cpf);
 
-    const payload = {
+    const recordForPrint: CensusFormState = {
       ...form,
       registroTipo: form.registroTipo.trim(),
       registroTipoOutro: form.registroTipoOutro.trim(),
       idInterno: internalId,
+      cargo: form.cargo.trim() || "membro",
       congregacao: form.congregacao.trim(),
       setor: form.setor.trim(),
       name: form.name.trim(),
@@ -537,7 +591,6 @@ export default function CensusFormSection({
       telefone: form.telefone.trim(),
       celular: form.celular.trim(),
       cpf: form.cpf.trim(),
-      cpfNormalized: normalizeCpf(form.cpf),
       rg: form.rg.trim(),
       tituloEleitor: form.tituloEleitor.trim(),
       endereco: form.endereco.trim(),
@@ -575,6 +628,11 @@ export default function CensusFormSection({
       recebimento: form.recebimento.trim(),
       dataRecebimento: form.dataRecebimento.trim(),
       photo: form.photo.trim(),
+    };
+
+    const payload = {
+      ...recordForPrint,
+      cpfNormalized: normalizeCpf(recordForPrint.cpf),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -745,6 +803,7 @@ export default function CensusFormSection({
                       Outros (especifique)
                     </label>
                     <input
+                      ref={registroTipoOutroRef}
                       type="text"
                       value={form.registroTipoOutro}
                       onChange={(event) =>
@@ -781,9 +840,8 @@ export default function CensusFormSection({
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Congregação
                   </label>
-                  <input
-                    type="text"
-                    list="censo-congregacoes"
+                  <select
+                    ref={congregacaoRef}
                     value={form.congregacao}
                     onChange={(event) => {
                       const value = event.target.value;
@@ -797,22 +855,22 @@ export default function CensusFormSection({
                       }));
                     }}
                     className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none disabled:bg-gray-100"
-                    placeholder="Ex.: Cong. Matriz"
                     required
-                  />
-                  <datalist id="censo-congregacoes">
-                    {congregationOptions.map((option) => (
-                      <option key={option} value={option} />
+                  >
+                    <option value="">Selecione</option>
+                    {congregacaoSelectOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
                     ))}
-                  </datalist>
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Setor
                   </label>
-                  <input
-                    type="text"
-                    list="censo-setores"
+                  <select
+                    ref={setorRef}
                     value={form.setor}
                     onChange={(event) =>
                       setForm((prev) => ({
@@ -821,14 +879,15 @@ export default function CensusFormSection({
                       }))
                     }
                     className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
-                    placeholder="Ex.: Setor 01"
                     required
-                  />
-                  <datalist id="censo-setores">
-                    {sectorOptions.map((option) => (
-                      <option key={option} value={option} />
+                  >
+                    <option value="">Selecione</option>
+                    {setorSelectOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
                     ))}
-                  </datalist>
+                  </select>
                 </div>
               </div>
             </fieldset>
@@ -843,6 +902,7 @@ export default function CensusFormSection({
                     Nome completo
                   </label>
                   <input
+                    ref={nameRef}
                     type="text"
                     value={form.name}
                     onChange={(event) =>
@@ -1101,6 +1161,7 @@ export default function CensusFormSection({
                     Nome do pai
                   </label>
                   <input
+                    ref={paiRef}
                     type="text"
                     value={form.pai}
                     onChange={(event) =>
@@ -1135,6 +1196,7 @@ export default function CensusFormSection({
                     Nome da mãe
                   </label>
                   <input
+                    ref={maeRef}
                     type="text"
                     value={form.mae}
                     onChange={(event) =>
@@ -1713,6 +1775,7 @@ export default function CensusFormSection({
               </legend>
               <label className="flex items-center gap-3 text-sm text-gray-600">
                 <input
+                  ref={autorizacaoRef}
                   type="checkbox"
                   checked={form.autorizacao}
                   onChange={(event) =>
