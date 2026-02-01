@@ -40,13 +40,14 @@ export default function PatrimonioDetailPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!db || !assetId) {
+    const firestore = db;
+    if (!firestore || !assetId) {
       setLoading(false);
       return;
     }
     const run = async () => {
       try {
-        const snap = await getDoc(doc(db, "patrimony", assetId));
+        const snap = await getDoc(doc(firestore, "patrimony", assetId));
         if (snap.exists()) {
           setItem({ id: snap.id, ...(snap.data() as Omit<PatrimonyDoc, "id">) });
         } else {

@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useMemo, useState, useEffect, type ReactNode } from "react";
 import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
 import BoardSection from "@/components/sections/institutional/BoardSection";
 import HistoryTimelineSection from "@/components/sections/institutional/HistoryTimelineSection";
@@ -12,12 +11,11 @@ import SectorsSection from "@/components/sections/institutional/SectorsSection";
 type TabItem = {
   id: string;
   label: string;
-  content: JSX.Element;
+  content: ReactNode;
 };
 
 export default function InstitutionalTabsSection() {
   const { settings } = useSiteSettings();
-  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState("president");
 
   const tabs = useMemo<TabItem[]>(
@@ -53,17 +51,16 @@ export default function InstitutionalTabsSection() {
   );
 
   useEffect(() => {
-    const fromQuery = searchParams.get("tab")?.toLowerCase() || "";
-    const fromHash =
-      typeof window !== "undefined"
-        ? window.location.hash.replace("#", "").toLowerCase()
-        : "";
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery = params.get("tab")?.toLowerCase() || "";
+    const fromHash = window.location.hash.replace("#", "").toLowerCase();
     const target = fromQuery || fromHash;
     if (!target) return;
     if (tabs.some((tab) => tab.id === target)) {
       setActiveTab(target);
     }
-  }, [searchParams, tabs]);
+  }, [tabs]);
 
   const activeContent =
     tabs.find((tab) => tab.id === activeTab)?.content ?? tabs[0]?.content;

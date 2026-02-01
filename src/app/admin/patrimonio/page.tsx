@@ -182,9 +182,10 @@ export default function AdminPatrimonioPage() {
   };
 
   const nextNumericId = async () => {
-    if (!db) return 1;
-    const counterRef = doc(db, "counters", "patrimony");
-    return runTransaction(db, async (tx) => {
+    const firestore = db;
+    if (!firestore) return 1;
+    const counterRef = doc(firestore, "counters", "patrimony");
+    return runTransaction(firestore, async (tx) => {
       const counterSnap = await tx.get(counterRef);
       let nextId = 1;
       if (counterSnap.exists()) {
@@ -206,7 +207,7 @@ export default function AdminPatrimonioPage() {
 
       let candidate = nextId;
       for (let i = 0; i < 5; i += 1) {
-        const candidateRef = doc(db, "patrimony", String(candidate));
+        const candidateRef = doc(firestore, "patrimony", String(candidate));
         const candidateSnap = await tx.get(candidateRef);
         if (!candidateSnap.exists()) {
           tx.set(counterRef, { nextId: candidate + 1 }, { merge: true });

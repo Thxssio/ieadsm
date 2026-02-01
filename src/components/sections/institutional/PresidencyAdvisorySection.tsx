@@ -55,10 +55,12 @@ const parseAdvisoryContent = (
     if (!currentSection) startSection(fallbackTitle);
   };
 
-  const startGroup = (heading?: string) => {
+  const startGroup = (heading?: string): AdvisoryGroup => {
     ensureSection();
-    currentGroup = { heading, items: [] };
-    currentSection?.groups.push(currentGroup);
+    const group: AdvisoryGroup = { heading, items: [] };
+    currentGroup = group;
+    currentSection!.groups.push(group);
+    return group;
   };
 
   for (const rawLine of lines) {
@@ -76,8 +78,8 @@ const parseAdvisoryContent = (
     }
 
     ensureSection();
-    if (!currentGroup) startGroup();
-    currentGroup?.items.push(cleanedLine);
+    const group = currentGroup ?? startGroup();
+    group.items.push(cleanedLine);
   }
 
   return sections
