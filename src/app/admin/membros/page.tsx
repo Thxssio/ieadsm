@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   collection,
@@ -13,15 +13,24 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { Users, ShieldCheck } from "lucide-react";
+import QRCode from "qrcode";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useToast } from "@/components/ui/Toast";
 import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
+import {
+  buildCarteiraDocument,
+  buildCarteiraMarkup,
+  buildMemberQrPayload,
+  resolvePhotoForCard,
+  type PrintMode,
+} from "@/lib/members/card";
 import { db } from "@/lib/firebase/client";
 import { deleteStorageObject } from "@/lib/firebase/storageUtils";
 
 type ChildInfo = {
   name: string;
   cpf: string;
+  observacao?: string;
 };
 
 type CensusMember = {
@@ -176,9 +185,30 @@ const formatCargo = (value?: string) => {
   return found?.label ?? "Membro";
 };
 
+const parseMemberQrPayload = (raw: string) => {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && "data" in parsed) {
+      const data = (parsed as { data?: Record<string, string> }).data;
+      if (data && typeof data === "object") return data;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+};
+
+const firstNonEmpty = (...values: Array<string | undefined>) => {
+  for (const value of values) {
+    if (value && value.trim()) return value.trim();
+  }
+  return "-";
+};
+
 export default function AdminMembrosPage() {
   const router = useRouter();
-  const { isAuthenticated, isReady } = useAuth();
+  const { isAuthenticated, isReady, user } = useAuth();
   const { pushToast } = useToast();
   const { settings } = useSiteSettings();
 
@@ -193,6 +223,19 @@ export default function AdminMembrosPage() {
   const [toggling, setToggling] = useState(false);
   const [cargoSaving, setCargoSaving] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerError, setScannerError] = useState("");
+  const [scannerLoading, setScannerLoading] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const scanFrameRef = useRef<number | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const detectorRef = useRef<any>(null);
+  const jsQrRef = useRef<any>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isSafari =
+    typeof navigator !== "undefined" &&
+    /Safari/.test(navigator.userAgent) &&
+    !/Chrome|Chromium|Edg|OPR|CriOS|FxiOS|Android/.test(navigator.userAgent);
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
@@ -222,11 +265,177 @@ export default function AdminMembrosPage() {
     return () => unsub();
   }, []);
 
+  useEffect(() => {
+    if (!scannerOpen) {
+      if (scanFrameRef.current) {
+        cancelAnimationFrame(scanFrameRef.current);
+        scanFrameRef.current = null;
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+      detectorRef.current = null;
+      jsQrRef.current = null;
+      canvasRef.current = null;
+      setScannerLoading(false);
+      return;
+    }
+
+    const startScanner = async () => {
+      setScannerError("");
+      setScannerLoading(true);
+      if (!navigator?.mediaDevices?.getUserMedia) {
+        setScannerError("Não foi possível acessar a câmera neste navegador.");
+        setScannerLoading(false);
+        return;
+      }
+
+      const Detector =
+        typeof window !== "undefined" ? (window as any).BarcodeDetector : null;
+      const useBarcodeDetector = Boolean(Detector);
+
+      if (!useBarcodeDetector) {
+        try {
+          const mod = await import("jsqr");
+          jsQrRef.current = mod.default || mod;
+        } catch {
+          setScannerError("Não foi possível carregar o leitor de QR Code.");
+          setScannerLoading(false);
+          return;
+        }
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+        });
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+        if (useBarcodeDetector) {
+          detectorRef.current = new Detector({ formats: ["qr_code"] });
+        }
+      } catch (error) {
+        setScannerError(
+          error instanceof Error
+            ? error.message
+            : "Não foi possível acessar a câmera."
+        );
+        setScannerLoading(false);
+        return;
+      }
+
+      const scanLoop = async () => {
+        if (!videoRef.current) return;
+        try {
+          if (videoRef.current.readyState < 2) {
+            scanFrameRef.current = requestAnimationFrame(scanLoop);
+            return;
+          }
+
+          let raw = "";
+
+          if (useBarcodeDetector && detectorRef.current) {
+            const codes = await detectorRef.current.detect(videoRef.current);
+            if (codes && codes.length > 0) {
+              raw = codes[0]?.rawValue || codes[0]?.value || "";
+            }
+          } else if (jsQrRef.current) {
+            const canvas =
+              canvasRef.current ?? document.createElement("canvas");
+            canvasRef.current = canvas;
+            const width = videoRef.current.videoWidth;
+            const height = videoRef.current.videoHeight;
+            if (width && height) {
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext("2d");
+              if (ctx) {
+                ctx.drawImage(videoRef.current, 0, 0, width, height);
+                const imageData = ctx.getImageData(0, 0, width, height);
+                const result = jsQrRef.current(imageData.data, width, height, {
+                  inversionAttempts: "attemptBoth",
+                });
+                raw = result?.data || "";
+              }
+            }
+          }
+
+          if (raw) {
+            const trimmed = raw.trim();
+            const data = parseMemberQrPayload(trimmed);
+            const id = data?.id?.trim();
+            const cpf = normalizeCpf(data?.cpf);
+            const nome = data?.nome?.trim().toLowerCase();
+
+            const match = items.find((item) => {
+              if (id && (item.idInterno?.trim() === id || item.id === id)) {
+                return true;
+              }
+              if (cpf && normalizeCpf(item.cpf) === cpf) {
+                return true;
+              }
+              if (nome && item.name?.trim().toLowerCase() === nome) {
+                return true;
+              }
+              if (!data && trimmed) {
+                return (
+                  item.id === trimmed ||
+                  item.idInterno?.trim() === trimmed ||
+                  normalizeCpf(item.cpf) === normalizeCpf(trimmed)
+                );
+              }
+              return false;
+            });
+
+            if (match) {
+              setActiveMember(match);
+              pushToast({
+                type: "success",
+                title: "Membro identificado",
+                description: match.name || "Cadastro encontrado.",
+              });
+            } else {
+              const fallbackSearch = id || data?.cpf || data?.nome || trimmed;
+              if (fallbackSearch) {
+                setSearch(fallbackSearch);
+              }
+              pushToast({
+                type: "info",
+                title: "QR Code lido",
+                description: data?.nome
+                  ? `Membro: ${data.nome}`
+                  : "Aplicamos a busca na lista.",
+              });
+            }
+
+            setScannerOpen(false);
+            return;
+          }
+        } catch {
+          // ignore
+        }
+        scanFrameRef.current = requestAnimationFrame(scanLoop);
+      };
+
+      setScannerLoading(false);
+      scanFrameRef.current = requestAnimationFrame(scanLoop);
+    };
+
+    void startScanner();
+  }, [scannerOpen, items, pushToast]);
+
   const congregationOptions = useMemo(() => {
+    const filtered = filterSector
+      ? items.filter((item) => item.setor === filterSector)
+      : items;
     return Array.from(
-      new Set(items.map((item) => item.congregacao).filter(isNonEmpty))
+      new Set(filtered.map((item) => item.congregacao).filter(isNonEmpty))
     ).sort((a, b) => a.localeCompare(b));
-  }, [items]);
+  }, [items, filterSector]);
 
   const sectorOptions = useMemo(() => {
     return Array.from(
@@ -245,6 +454,17 @@ export default function AdminMembrosPage() {
     values.add("membro");
     return cargoOptions.filter((option) => values.has(option.value));
   }, [items]);
+
+  useEffect(() => {
+    if (!filterSector || !filterCongregation) return;
+    const valid = items.some(
+      (item) =>
+        item.setor === filterSector && item.congregacao === filterCongregation
+    );
+    if (!valid) {
+      setFilterCongregation("");
+    }
+  }, [filterSector, filterCongregation, items]);
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
@@ -405,8 +625,9 @@ export default function AdminMembrosPage() {
           .map((child) => ({
             name: child.name?.trim() ?? "",
             cpf: child.cpf?.trim() ?? "",
+            observacao: child.observacao?.trim() ?? "",
           }))
-          .filter((child) => child.name || child.cpf)
+          .filter((child) => child.name || child.cpf || child.observacao)
       : [];
 
     const filhosCount =
@@ -421,7 +642,9 @@ export default function AdminMembrosPage() {
             <td class="text-center">${
               child ? displayCpfValue(child.cpf) : "&nbsp;"
             }</td>
-            <td class="text-center">&nbsp;</td>
+            <td class="text-center">${
+              child ? displayValue(child.observacao) : "&nbsp;"
+            }</td>
           </tr>
         `;
       })
@@ -433,7 +656,83 @@ export default function AdminMembrosPage() {
       ? `<img src="${escapeHtml(photoSrc)}" alt="Foto do membro" />`
       : `<div class="photo-placeholder">Sem foto</div>`;
 
-    const generatedAt = new Date().toLocaleString("pt-BR");
+    const isSolteiro = member.estadoCivil === "Solteiro(a)";
+    const hasChildren =
+      filhos.length > 0 || Boolean(member.qtdeFilhos?.trim());
+    const maritalSection = isSolteiro
+      ? ""
+      : `
+        <div class="section-title">Dados Matrimoniais</div>
+        <div class="row">
+          <div class="field col-3">
+            <span class="label">Estado Civil</span>
+            <div class="value">${displayValue(member.estadoCivil)}</div>
+          </div>
+          <div class="field col-3">
+            <span class="label">Data Casamento</span>
+            <div class="value">${displayDateValue(member.dtCasamento)}</div>
+          </div>
+          <div class="field col-6">
+            <span class="label">Cônjuge</span>
+            <div class="value">${displayValue(member.nomeConjuge)}</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field col-3">
+            <span class="label">CPF Cônjuge</span>
+            <div class="value">${displayCpfValue(member.cpfConjuge)}</div>
+          </div>
+          <div class="field col-3">
+            <span class="label">Data Nasc. Cônjuge</span>
+            <div class="value">${displayDateValue(
+              member.dataNascimentoConjuge
+            )}</div>
+          </div>
+          <div class="field col-3">
+            <span class="label">Profissão Cônjuge</span>
+            <div class="value">${displayValue(member.profissaoConjuge)}</div>
+          </div>
+          <div class="field col-3">
+            <span class="label">Grau Instrução Cônjuge</span>
+            <div class="value">${displayValue(
+              member.grauInstrucaoConjuge
+            )}</div>
+          </div>
+        </div>
+      `;
+
+    const childrenSection = hasChildren
+      ? `
+        <div class="section-title">Filhos (Quantidade: ${escapeHtml(
+          filhosCount
+        )})</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Nome do Filho(a)</th>
+              <th class="text-center">CPF</th>
+              <th class="text-center">Observação</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${childRows}
+          </tbody>
+        </table>
+      `
+      : "";
+
+    const observacoes = member.informacoes?.trim() || "";
+    const observacoesSection = observacoes
+      ? `
+        <div class="section-title">Outras Informações</div>
+        <div class="row">
+          <div class="field col-12">
+            <span class="label">Observações</span>
+            <div class="value multiline">${displayMultiline(observacoes)}</div>
+          </div>
+        </div>
+      `
+      : "";
 
     return `
       <div class="page">
@@ -666,111 +965,149 @@ export default function AdminMembrosPage() {
             <div class="value">${displayValue(member.origem)}</div>
           </div>
         </div>
+        ${maritalSection}
 
-        <div class="section-title">Dados Matrimoniais</div>
-        <div class="row">
-          <div class="field col-3">
-            <span class="label">Estado Civil</span>
-            <div class="value">${displayValue(member.estadoCivil)}</div>
-          </div>
-          <div class="field col-3">
-            <span class="label">Data Casamento</span>
-            <div class="value">${displayDateValue(member.dtCasamento)}</div>
-          </div>
-          <div class="field col-6">
-            <span class="label">Cônjuge</span>
-            <div class="value">${displayValue(member.nomeConjuge)}</div>
-          </div>
-        </div>
-        <div class="row">
-          <div class="field col-3">
-            <span class="label">CPF Cônjuge</span>
-            <div class="value">${displayCpfValue(member.cpfConjuge)}</div>
-          </div>
-          <div class="field col-3">
-            <span class="label">Data Nasc. Cônjuge</span>
-            <div class="value">${displayDateValue(
-              member.dataNascimentoConjuge
-            )}</div>
-          </div>
-          <div class="field col-3">
-            <span class="label">Profissão Cônjuge</span>
-            <div class="value">${displayValue(member.profissaoConjuge)}</div>
-          </div>
-          <div class="field col-3">
-            <span class="label">Grau Instrução Cônjuge</span>
-            <div class="value">${displayValue(
-              member.grauInstrucaoConjuge
-            )}</div>
-          </div>
-        </div>
+        ${childrenSection}
 
-        <div class="section-title">Filhos (Quantidade: ${escapeHtml(
-          filhosCount
-        )})</div>
-        <table>
-          <thead>
-            <tr>
-              <th>Nome do Filho(a)</th>
-              <th class="text-center">CPF</th>
-              <th class="text-center">Observação</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${childRows}
-          </tbody>
-        </table>
+        ${observacoesSection}
 
-        <div class="section-title">Outras Informações</div>
+        <div class="section-title">Declaração</div>
         <div class="row">
           <div class="field col-12">
-            <span class="label">Observações</span>
-            <div class="value multiline">${displayMultiline(
-              member.informacoes
-            )}</div>
-          </div>
-        </div>
-
-        <div class="section-title">Autorizações</div>
-        <div class="row">
-          <div class="field col-12">
-            <span class="label">Termos</span>
+            <span class="label">Concordância</span>
             <div class="value">
               <div class="checkbox-group">
                 <span><span class="check">${
                   member.autorizacao ? "X" : ""
-                }</span>Autorizo uso dos dados (LGPD)</span>
-                <span><span class="check">${
-                  member.usoImagem ? "X" : ""
-                }</span>Autorizo uso de imagem</span>
+                }</span>Declaro que li e concordo</span>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="signature-row">
-          <div class="signature">
-            <div class="signature-line"></div>
-            Assinatura do Membro
-          </div>
-          <div class="signature">
-            <div class="signature-line"></div>
-            Secretaria / Pastor Responsável
-          </div>
-        </div>
-
-        <div class="footer">Gerado em: ${escapeHtml(generatedAt)}</div>
+        <div class="footer">&nbsp;</div>
       </div>
     `;
   };
 
-  const buildPrintDocument = (pages: string) => `
+  const buildPrintDocument = (
+    pages: string,
+    meta: { loginLabel: string; generatedAt: string },
+    options?: { mode?: PrintMode; filename?: string; pageSelector?: string }
+  ) => {
+    const mode = options?.mode ?? "print";
+    const filename = options?.filename ?? "fichas-cadastro";
+    const pageSelector = options?.pageSelector ?? ".page";
+    const downloadScripts =
+      mode === "download"
+        ? `
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+      `
+        : "";
+
+    const actionScript =
+      mode === "download"
+        ? `
+          const waitForImages = () => {
+            const images = Array.from(document.images || []);
+            return Promise.all(
+              images.map(
+                (img) =>
+                  img.complete
+                    ? Promise.resolve()
+                    : new Promise((resolve) => {
+                        img.onload = resolve;
+                        img.onerror = resolve;
+                      })
+              )
+            );
+          };
+
+          const waitForFonts = async () => {
+            if (document.fonts && document.fonts.ready) {
+              try {
+                await document.fonts.ready;
+              } catch {
+                // ignore
+              }
+            }
+          };
+
+          const exportPdf = async () => {
+            try {
+              const elements = Array.from(document.querySelectorAll("${pageSelector}"));
+              if (!elements.length) return;
+              const { jsPDF } = window.jspdf || {};
+              if (!jsPDF || !window.html2canvas) {
+                window.print();
+                return;
+              }
+              const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "p" });
+              for (let i = 0; i < elements.length; i += 1) {
+                const canvas = await window.html2canvas(elements[i], {
+                  scale: 2,
+                  useCORS: true,
+                  backgroundColor: "#ffffff",
+                });
+                const imgData = canvas.toDataURL("image/jpeg", 0.92);
+                const imgWidth = 210;
+                const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                const offsetY = Math.max(0, (297 - imgHeight) / 2);
+                if (i > 0) pdf.addPage();
+                pdf.addImage(imgData, "JPEG", 0, offsetY, imgWidth, imgHeight);
+              }
+              pdf.save("${filename}.pdf");
+              setTimeout(() => window.close(), 100);
+            } catch (err) {
+              window.print();
+            }
+          };
+
+          let printed = false;
+          const triggerExport = () => {
+            if (printed) return;
+            printed = true;
+            setTimeout(() => exportPdf(), 150);
+          };
+        `
+        : `
+          const waitForImages = () => {
+            const images = Array.from(document.images || []);
+            return Promise.all(
+              images.map(
+                (img) =>
+                  img.complete
+                    ? Promise.resolve()
+                    : new Promise((resolve) => {
+                        img.onload = resolve;
+                        img.onerror = resolve;
+                      })
+              )
+            );
+          };
+
+          let printed = false;
+          const triggerPrint = () => {
+            if (printed) return;
+            printed = true;
+            setTimeout(() => window.print(), 150);
+          };
+        `;
+
+    const triggerAction = mode === "download" ? "triggerExport" : "triggerPrint";
+
+    return `
     <!doctype html>
     <html lang="pt-BR">
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Fichas de Cadastro</title>
+        <meta name="pdf-login" content="${escapeHtml(meta.loginLabel)}" />
+        <meta name="pdf-generated-at" content="${escapeHtml(meta.generatedAt)}" />
+        <meta name="pdf-ip" content="" />
+        <meta name="pdf-generated" content="true" />
         <style>
           @import url("https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap");
 
@@ -796,14 +1133,14 @@ export default function AdminMembrosPage() {
 
           @page {
             size: A4;
-            margin: 8mm;
+            margin: 6mm;
           }
 
           .page {
             width: 210mm;
             min-height: 297mm;
-            margin: 8mm auto;
-            padding: 8mm;
+            margin: 0 auto;
+            padding: 6mm;
             background: #fff;
             box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
             position: relative;
@@ -816,13 +1153,24 @@ export default function AdminMembrosPage() {
             page-break-after: auto;
           }
 
+          @media print {
+            .page {
+              margin: 0;
+              box-shadow: none;
+              width: 100%;
+              min-height: auto;
+              break-after: auto;
+              page-break-after: auto;
+            }
+          }
+
           header {
             display: flex;
             justify-content: space-between;
             gap: 16px;
-            padding-bottom: 10px;
+            padding-bottom: 6px;
             border-bottom: 2px solid var(--ink);
-            margin-bottom: 10px;
+            margin-bottom: 6px;
           }
 
           .header-left {
@@ -849,13 +1197,13 @@ export default function AdminMembrosPage() {
 
           .title {
             font-family: "Playfair Display", serif;
-            font-size: 18pt;
+            font-size: 16pt;
             letter-spacing: 0.08em;
             text-transform: uppercase;
           }
 
           .subtitle {
-            font-size: 9pt;
+            font-size: 8pt;
             color: var(--muted);
             font-weight: 600;
             text-transform: uppercase;
@@ -863,8 +1211,8 @@ export default function AdminMembrosPage() {
           }
 
           .photo {
-            width: 90px;
-            height: 120px;
+            width: 80px;
+            height: 108px;
             border: 1px solid var(--line);
             border-radius: 6px;
             display: flex;
@@ -888,13 +1236,13 @@ export default function AdminMembrosPage() {
           }
 
           .section-title {
-            margin-top: 10px;
-            margin-bottom: 6px;
+            margin-top: 6px;
+            margin-bottom: 4px;
             padding: 4px 8px;
             border: 1px solid var(--line);
             background: var(--panel);
             text-transform: uppercase;
-            font-size: 9pt;
+            font-size: 8pt;
             font-weight: 700;
             letter-spacing: 0.08em;
             color: #374151;
@@ -903,8 +1251,8 @@ export default function AdminMembrosPage() {
           .row {
             display: grid;
             grid-template-columns: repeat(12, minmax(0, 1fr));
-            gap: 6px;
-            margin-bottom: 6px;
+            gap: 4px;
+            margin-bottom: 4px;
           }
 
           .col-1 { grid-column: span 1; }
@@ -924,7 +1272,7 @@ export default function AdminMembrosPage() {
           }
 
           .label {
-            font-size: 8pt;
+            font-size: 7pt;
             text-transform: uppercase;
             color: var(--muted);
             font-weight: 600;
@@ -934,23 +1282,23 @@ export default function AdminMembrosPage() {
           .value {
             border: 1px solid var(--line);
             border-radius: 4px;
-            padding: 4px 6px;
-            min-height: 18px;
-            font-size: 10pt;
+            padding: 3px 5px;
+            min-height: 16px;
+            font-size: 9pt;
             background: #fff;
           }
 
           .value.multiline {
-            min-height: 48px;
+            min-height: 36px;
             line-height: 1.4;
           }
 
           .checkbox-group {
             display: flex;
-            gap: 10px;
+            gap: 8px;
             align-items: center;
             flex-wrap: wrap;
-            font-size: 9pt;
+            font-size: 8pt;
           }
 
           .check {
@@ -968,7 +1316,7 @@ export default function AdminMembrosPage() {
           table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 9.5pt;
+            font-size: 8.5pt;
           }
 
           th, td {
@@ -979,7 +1327,7 @@ export default function AdminMembrosPage() {
           th {
             background: #f9fafb;
             text-transform: uppercase;
-            font-size: 8pt;
+            font-size: 7.5pt;
             letter-spacing: 0.06em;
             color: var(--muted);
             text-align: left;
@@ -989,26 +1337,8 @@ export default function AdminMembrosPage() {
             text-align: center;
           }
 
-          .signature-row {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 24px;
-            margin-top: 24px;
-          }
-
-          .signature {
-            text-align: center;
-            font-size: 9pt;
-            color: var(--muted);
-          }
-
-          .signature-line {
-            border-top: 1px solid var(--ink);
-            margin-bottom: 4px;
-          }
-
           .footer {
-            margin-top: 16px;
+            margin-top: 10px;
             font-size: 8pt;
             color: var(--muted);
             text-align: center;
@@ -1016,24 +1346,71 @@ export default function AdminMembrosPage() {
 
           @media print {
             body { background: #fff; }
-            .page {
-              margin: 0;
-              box-shadow: none;
-              width: 100%;
-              min-height: auto;
-            }
           }
         </style>
+        ${downloadScripts}
       </head>
       <body>
+        <div id="pdf-meta" data-login="${escapeHtml(
+          meta.loginLabel
+        )}" data-generated-at="${escapeHtml(
+          meta.generatedAt
+        )}" data-ip="" data-pdf-generated="true" style="display:none"></div>
         ${pages}
         <script>
-          window.onload = () => setTimeout(() => window.print(), 150);
-          window.onafterprint = () => setTimeout(() => window.close(), 50);
+          ${actionScript}
+          const ipMeta = document.querySelector('meta[name="pdf-ip"]');
+          const metaNode = document.getElementById("pdf-meta");
+          const setIp = (value) => {
+            if (ipMeta) ipMeta.setAttribute("content", value);
+            if (metaNode) metaNode.setAttribute("data-ip", value);
+          };
+
+          window.onload = () => {
+            const waitResources = async () => {
+              if (typeof waitForImages === "function") {
+                await waitForImages();
+              }
+              if (typeof waitForFonts === "function") {
+                await waitForFonts();
+              }
+            };
+
+            let timeoutId = null;
+            const controller = new AbortController();
+
+            timeoutId = setTimeout(() => {
+              controller.abort();
+              setIp("N/D");
+              waitResources().then(${triggerAction});
+            }, 1500);
+
+            fetch("https://api.ipify.org?format=json", { signal: controller.signal })
+              .then((res) => (res.ok ? res.json() : null))
+              .then((data) => {
+                if (data && data.ip) {
+                  setIp(data.ip);
+                } else {
+                  setIp("N/D");
+                }
+              })
+              .catch(() => setIp("N/D"))
+              .finally(() => {
+                if (timeoutId) clearTimeout(timeoutId);
+                waitResources().then(${triggerAction});
+              });
+          };
+
+          ${
+            mode === "print"
+              ? "window.onafterprint = () => setTimeout(() => window.close(), 50);"
+              : ""
+          }
         </script>
       </body>
     </html>
   `;
+  };
 
   const handlePrintFichas = (members: CensusMember[]) => {
     if (!members.length) {
@@ -1049,11 +1426,55 @@ export default function AdminMembrosPage() {
     if (!w) return;
 
     const pages = members.map((member) => buildFichaMarkup(member)).join("");
-    const html = buildPrintDocument(pages);
+    const meta = {
+      loginLabel: user?.email || user?.displayName || "Não identificado",
+      generatedAt: new Date().toLocaleString("pt-BR"),
+    };
+    const mode: PrintMode = isSafari ? "download" : "print";
+    const html = buildPrintDocument(pages, meta, {
+      mode,
+      filename: "fichas-cadastro",
+      pageSelector: ".page",
+    });
 
     w.document.open();
     w.document.write(html);
     w.document.close();
+  };
+
+  const handlePrintCarteira = async (member: CensusMember) => {
+    if (!member) return;
+
+    try {
+      const qrPayload = buildMemberQrPayload(member);
+      const qrDataUrl = await QRCode.toDataURL(qrPayload, {
+        width: 240,
+        margin: 1,
+        errorCorrectionLevel: "L",
+      });
+      const w = window.open("", "_blank");
+      if (!w) return;
+      const photoResolved = await resolvePhotoForCard(member.photo);
+      const memberForCard = photoResolved
+        ? { ...member, photo: photoResolved }
+        : member;
+      const sheets = buildCarteiraMarkup(memberForCard, qrDataUrl, settings);
+      const mode: PrintMode = isSafari ? "download" : "print";
+      const html = buildCarteiraDocument(sheets, {
+        mode,
+        filename: "carteira-membro",
+        pageSelector: ".card-sheet",
+      });
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+    } catch (err) {
+      pushToast({
+        type: "error",
+        title: "Falha ao gerar carteira",
+        description: "Não foi possível criar o QR Code com todos os dados.",
+      });
+    }
   };
 
   const handlePrintFicha = (member: CensusMember) => {
@@ -1282,6 +1703,13 @@ export default function AdminMembrosPage() {
               >
                 Limpar seleção
               </button>
+              <button
+                type="button"
+                onClick={() => setScannerOpen(true)}
+                className="rounded-full border border-emerald-200 px-3 py-1.5 font-semibold text-emerald-600 hover:bg-emerald-50 transition"
+              >
+                Ler QR Code
+              </button>
             </div>
 
             {loading ? (
@@ -1359,14 +1787,14 @@ export default function AdminMembrosPage() {
 
       {activeMember ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4"
+          className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-slate-900/60 px-3 sm:px-4 py-6 sm:py-10 overflow-y-auto overscroll-contain"
           onClick={() => setActiveMember(null)}
         >
           <div
-            className="bg-white rounded-3xl shadow-xl max-w-3xl w-full overflow-hidden"
+            className="bg-white rounded-3xl shadow-xl max-w-3xl w-full overflow-hidden flex flex-col max-h-[calc(100dvh-3rem)] sm:max-h-[90vh]"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-slate-100">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 px-5 sm:px-6 py-4 border-b border-slate-100 shrink-0">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">
                   {formatRegistro(
@@ -1378,32 +1806,42 @@ export default function AdminMembrosPage() {
                   {activeMember.name || "Sem nome"}
                 </h3>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                 <button
                   type="button"
                   onClick={() => handlePrintFicha(activeMember)}
-                  className="rounded-full border border-blue-200 px-4 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50 transition"
+                  className="w-full sm:w-auto rounded-full border border-blue-200 px-4 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50 transition"
                 >
                   Gerar ficha (PDF)
                 </button>
                 <button
                   type="button"
+                  onClick={() => handlePrintCarteira(activeMember)}
+                  className="w-full sm:w-auto rounded-full border border-emerald-200 px-4 py-2 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 transition"
+                >
+                  Gerar carteira
+                </button>
+                <button
+                  type="button"
                   onClick={() => setActiveMember(null)}
-                  className="text-slate-400 hover:text-slate-600 text-2xl leading-none"
+                  className="ml-auto sm:ml-0 text-slate-400 hover:text-slate-600 text-2xl leading-none"
                   aria-label="Fechar"
                 >
                   ×
                 </button>
               </div>
             </div>
-            <div className="px-6 py-6 space-y-6 max-h-[80vh] overflow-y-auto">
+            <div className="px-5 sm:px-6 py-6 space-y-6 flex-1 min-h-0 overflow-y-auto">
               {activeMember.photo ? (
-                <div className="w-full max-h-[320px] overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-                  <img
-                    src={safePhoto(activeMember.photo)}
-                    alt={activeMember.name || "Foto do membro"}
-                    className="w-full h-full object-contain"
-                  />
+                <div className="flex flex-col items-center gap-2">
+                  <div className="w-40 sm:w-48 aspect-[3/4] overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm">
+                    <img
+                      src={safePhoto(activeMember.photo)}
+                      alt={activeMember.name || "Foto do membro"}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                  <span className="text-xs text-slate-400">Foto 3x4</span>
                 </div>
               ) : null}
 
@@ -1608,6 +2046,61 @@ export default function AdminMembrosPage() {
                   )}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {scannerOpen ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/70 px-4"
+          onClick={() => setScannerOpen(false)}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-xl max-w-2xl w-full overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600">
+                  Leitor de QR Code
+                </p>
+                <p className="text-sm text-slate-500">
+                  Aponte a câmera para a carteirinha do membro.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setScannerOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-2xl leading-none"
+                aria-label="Fechar"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              {scannerError ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-slate-500">
+                  {scannerError}
+                </div>
+              ) : (
+                <div className="relative w-full aspect-video rounded-2xl overflow-hidden border border-slate-200 bg-slate-900">
+                  <video
+                    ref={videoRef}
+                    className="w-full h-full object-cover"
+                    muted
+                    playsInline
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-48 h-48 border-2 border-emerald-400/70 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]" />
+                  </div>
+                </div>
+              )}
+              {scannerLoading ? (
+                <p className="mt-3 text-xs text-slate-500">
+                  Ativando câmera...
+                </p>
+              ) : null}
             </div>
           </div>
         </div>

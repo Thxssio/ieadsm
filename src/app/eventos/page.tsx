@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ExternalLink, FileText, X, ArrowRight, CalendarDays, UserPlus } from "lucide-react"; // Adicionei CalendarDays
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
@@ -43,12 +44,13 @@ const buildEmbedUrl = (raw?: string) => {
   }
 };
 
-export default function EventosPage() {
+function EventosPageContent() {
   const { settings } = useSiteSettings();
   const [links, setLinks] = useState<LinkItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeForm, setActiveForm] = useState<LinkItem | null>(null);
   const [activeCenso, setActiveCenso] = useState(false);
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     if (!db) {
@@ -76,6 +78,12 @@ export default function EventosPage() {
       .filter((link) => isGoogleFormsUrl(link.href))
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   }, [links, loading]);
+
+  useEffect(() => {
+    if (searchParams?.get("censo") === "1" && settings.censusOpen) {
+      setActiveCenso(true);
+    }
+  }, [searchParams, settings.censusOpen]);
 
   // Fechar com ESC
   useEffect(() => {
@@ -357,5 +365,17 @@ export default function EventosPage() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function EventosPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-gray-50" aria-busy="true" />
+      }
+    >
+      <EventosPageContent />
+    </Suspense>
   );
 }

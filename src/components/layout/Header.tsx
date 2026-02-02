@@ -187,18 +187,30 @@ export default function Header() {
                   </button>
                 </>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsLoginOpen(true)}
-                  className={`px-6 py-2.5 rounded-full font-bold transition-all shadow-lg hover:shadow-xl flex items-center gap-2 transform hover:-translate-y-0.5 ${
-                    isSolid
-                      ? "bg-blue-600 hover:bg-blue-700 text-white"
-                      : "bg-white text-blue-900 hover:bg-blue-50"
-                  }`}
-                >
-                  <LogIn size={18} />
-                  <span>Acesso</span>
-                </button>
+                <>
+                  <Link
+                    href="/carteirinha"
+                    className={`px-5 py-2.5 rounded-full font-bold transition-all border flex items-center gap-2 ${
+                      isSolid
+                        ? "border-slate-200 text-slate-700 hover:bg-slate-50"
+                        : "border-white/40 text-white hover:bg-white/15"
+                    }`}
+                  >
+                    Carteirinha
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setIsLoginOpen(true)}
+                    className={`px-6 py-2.5 rounded-full font-bold transition-all shadow-lg hover:shadow-xl flex items-center gap-2 transform hover:-translate-y-0.5 ${
+                      isSolid
+                        ? "bg-blue-600 hover:bg-blue-700 text-white"
+                        : "bg-white text-blue-900 hover:bg-blue-50"
+                    }`}
+                  >
+                    <LogIn size={18} />
+                    <span>Acesso</span>
+                  </button>
+                </>
               )}
             </div>
 
@@ -278,21 +290,34 @@ export default function Header() {
                   </button>
                 </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMenuOpen(false);
-                    setIsLoginOpen(true);
-                  }}
-                  className={`w-full px-5 py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md text-lg ${
-                    isSolid
-                      ? "bg-blue-600 hover:bg-blue-700 text-white"
-                      : "bg-white text-blue-900 hover:bg-white/90"
-                  }`}
-                >
-                  <LogIn size={20} />
-                  Acesso
-                </button>
+                <div className="space-y-3">
+                  <Link
+                    href="/carteirinha"
+                    onClick={() => setIsMenuOpen(false)}
+                    className={`w-full px-5 py-4 rounded-xl font-bold flex items-center justify-center gap-2 text-lg border ${
+                      isSolid
+                        ? "border-slate-200 text-slate-700 hover:bg-slate-50"
+                        : "border-white/40 text-white hover:bg-white/15"
+                    }`}
+                  >
+                    Carteirinha
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      setIsLoginOpen(true);
+                    }}
+                    className={`w-full px-5 py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md text-lg ${
+                      isSolid
+                        ? "bg-blue-600 hover:bg-blue-700 text-white"
+                        : "bg-white text-blue-900 hover:bg-white/90"
+                    }`}
+                  >
+                    <LogIn size={20} />
+                    Acesso
+                  </button>
+                </div>
               )}
             </div>
           </div>

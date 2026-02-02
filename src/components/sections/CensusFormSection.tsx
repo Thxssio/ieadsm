@@ -14,14 +14,51 @@ import {
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { UserPlus } from "lucide-react";
+import QRCode from "qrcode";
 import { db, storage } from "@/lib/firebase/client";
 import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
 import { useCongregations } from "@/lib/firebase/useCongregations";
 import { deleteStorageObject } from "@/lib/firebase/storageUtils";
+import {
+  buildCarteiraDocument,
+  buildCarteiraMarkup,
+  buildMemberQrPayload,
+  resolvePhotoForCard,
+  type PrintMode,
+} from "@/lib/members/card";
 
 type ChildInfo = {
   name: string;
   cpf: string;
+  observacao: string;
+};
+
+const normalizeQtdeFilhos = (value: unknown) => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(Math.max(0, Math.trunc(value)));
+  }
+  if (typeof value === "string") return value;
+  return "";
+};
+
+const parseChildrenCount = (value: string) => {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) return 0;
+  return Math.max(0, parsed);
+};
+
+const ensureChildrenCount = (children: ChildInfo[], count: number) => {
+  if (count <= 0) return [];
+  if (children.length === count) return children;
+  if (children.length > count) return children.slice(0, count);
+  return [
+    ...children,
+    ...Array.from({ length: count - children.length }, () => ({
+      name: "",
+      cpf: "",
+      observacao: "",
+    })),
+  ];
 };
 
 type CensusFormState = {
@@ -171,6 +208,19 @@ const formatCpf = (value: string) => {
   return `${normalized.slice(0, 3)}.${normalized.slice(3, 6)}.${normalized.slice(6, 9)}-${normalized.slice(9, 11)}`;
 };
 
+const normalizePhone = (value: string) => value.replace(/\D/g, "");
+
+const formatPhone = (value: string) => {
+  const digits = normalizePhone(value);
+  if (!digits) return "";
+  if (digits.length <= 2) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
+};
+
 const formatDate = (value: string) => {
   if (!value) return "";
   // Se vem no formato YYYY-MM-DD (do input date), converte para DD/MM/YYYY
@@ -192,14 +242,13 @@ const parseDateToISO = (value: string) => {
   return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 };
 
-const sexoOptions = ["Masculino", "Feminino", "Outro"];
+const sexoOptions = ["Masculino", "Feminino"];
 
 const estadoCivilOptions = [
   "Solteiro(a)",
   "Casado(a)",
   "Divorciado(a)",
   "Viúvo(a)",
-  "Separado(a)",
   "Outro",
 ];
 
@@ -209,12 +258,19 @@ const mapRecordToForm = (
 ): CensusFormState => {
   const base = createEmptyForm();
   const { cpfNormalized, ...rest } = record;
-  const filhos = Array.isArray(rest.filhos)
-    ? rest.filhos.map((child) => ({
-        name: typeof child?.name === "string" ? child.name : "",
-        cpf: typeof child?.cpf === "string" ? child.cpf : "",
-      }))
-    : [];
+    const filhos = Array.isArray(rest.filhos)
+      ? rest.filhos.map((child) => ({
+          name: typeof child?.name === "string" ? child.name : "",
+          cpf: typeof child?.cpf === "string" ? child.cpf : "",
+          observacao:
+            typeof child?.observacao === "string" ? child.observacao : "",
+        }))
+      : [];
+  const qtdeFilhosValue = normalizeQtdeFilhos(rest.qtdeFilhos);
+  const filhosNormalized = ensureChildrenCount(
+    filhos,
+    parseChildrenCount(qtdeFilhosValue)
+  );
   const cpfValue =
     (typeof rest.cpf === "string" && rest.cpf.trim()) ||
     (typeof cpfNormalized === "string" && cpfNormalized.trim()) ||
@@ -223,12 +279,17 @@ const mapRecordToForm = (
   return {
     ...base,
     ...rest,
-    filhos,
+    qtdeFilhos: qtdeFilhosValue,
+    filhos: filhosNormalized,
     cpf: cpfValue,
     registroTipo: "Atualização",
     registroTipoOutro: "",
     autorizacao: false,
     idInterno: typeof rest.idInterno === "string" ? rest.idInterno : "",
+    sexo:
+      typeof rest.sexo === "string" && sexoOptions.includes(rest.sexo)
+        ? rest.sexo
+        : "",
     isOrphan: Boolean(rest.isOrphan),
     isOrphanFather: Boolean(rest.isOrphanFather),
     batizadoEspiritoSanto: Boolean(rest.batizadoEspiritoSanto),
@@ -245,7 +306,12 @@ export default function CensusFormSection({
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
+  const [cardNotice, setCardNotice] = useState("");
+  const [cardError, setCardError] = useState("");
   const [submittedId, setSubmittedId] = useState("");
+  const [lastSubmittedMember, setLastSubmittedMember] = useState<
+    (CensusFormState & { createdAt?: string }) | null
+  >(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const congregacaoRef = useRef<HTMLSelectElement>(null);
   const setorRef = useRef<HTMLSelectElement>(null);
@@ -267,15 +333,21 @@ export default function CensusFormSection({
   const [lastCepLookup, setLastCepLookup] = useState("");
   const [isEditingExisting, setIsEditingExisting] = useState(false);
   const [existingDocId, setExistingDocId] = useState<string | null>(null);
+  const isSafari =
+    typeof navigator !== "undefined" &&
+    /Safari/.test(navigator.userAgent) &&
+    !/Chrome|Chromium|Edg|OPR|CriOS|FxiOS|Android/.test(navigator.userAgent);
 
-  const congregationOptions = useMemo(
-    () =>
-      [...congregations]
-        .map((item) => item.name)
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b)),
-    [congregations]
-  );
+  const congregationOptions = useMemo(() => {
+    const setorSelecionado = form.setor.trim();
+    const filtered = setorSelecionado
+      ? congregations.filter((item) => item.sector === setorSelecionado)
+      : congregations;
+    return [...filtered]
+      .map((item) => item.name)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+  }, [congregations, form.setor]);
 
   const sectorOptions = useMemo(() => {
     return Array.from(
@@ -307,12 +379,8 @@ export default function CensusFormSection({
     form.setor.trim().length > 0 &&
     form.autorizacao;
 
-  const addChild = () => {
-    setForm((prev) => ({
-      ...prev,
-      filhos: [...prev.filhos, { name: "", cpf: "" }],
-    }));
-  };
+  const isSolteiro = form.estadoCivil === "Solteiro(a)";
+  const qtdeFilhosCount = parseChildrenCount(form.qtdeFilhos);
 
   const updateChild = (index: number, key: keyof ChildInfo, value: string) => {
     setForm((prev) => ({
@@ -320,13 +388,6 @@ export default function CensusFormSection({
       filhos: prev.filhos.map((child, idx) =>
         idx === index ? { ...child, [key]: value } : child
       ),
-    }));
-  };
-
-  const removeChild = (index: number) => {
-    setForm((prev) => ({
-      ...prev,
-      filhos: prev.filhos.filter((_, idx) => idx !== index),
     }));
   };
 
@@ -513,12 +574,57 @@ export default function CensusFormSection({
     node.focus();
   };
 
+  const openMemberCard = async (
+    memberForCard: CensusFormState & { createdAt?: string },
+    targetWindow?: Window | null
+  ) => {
+    try {
+      const qrPayload = buildMemberQrPayload(memberForCard);
+      const qrDataUrl = await QRCode.toDataURL(qrPayload, {
+        width: 240,
+        margin: 1,
+        errorCorrectionLevel: "L",
+      });
+      const w = targetWindow && !targetWindow.closed ? targetWindow : window.open("", "_blank");
+      if (!w) {
+        setCardError(
+          "Censo enviado, mas não foi possível abrir a carteirinha. Libere os pop-ups e tente novamente."
+        );
+        return;
+      }
+      const photoResolved = await resolvePhotoForCard(memberForCard.photo);
+      const memberWithPhoto = photoResolved
+        ? { ...memberForCard, photo: photoResolved }
+        : memberForCard;
+      const sheets = buildCarteiraMarkup(memberWithPhoto, qrDataUrl, settings);
+      const mode: PrintMode = isSafari ? "download" : "print";
+      const html = buildCarteiraDocument(sheets, {
+        mode,
+        filename: "carteira-membro",
+        pageSelector: ".card-sheet",
+      });
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+      setCardNotice(
+        "Carteirinha gerada automaticamente. Se não abriu, use o botão Carteirinha no topo."
+      );
+    } catch (err) {
+      setCardError(
+        "Censo enviado, mas não foi possível gerar a carteirinha agora."
+      );
+    }
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
     setSuccess(false);
     setSubmittedId("");
     setUploadError("");
+    setCardNotice("");
+    setCardError("");
+    setLastSubmittedMember(null);
 
     if (!db) {
       setError("Firebase não configurado.");
@@ -562,6 +668,20 @@ export default function CensusFormSection({
       return;
     }
 
+    let popupWindow: Window | null = null;
+    try {
+      popupWindow = window.open("", "_blank");
+      if (popupWindow) {
+        popupWindow.document.open();
+        popupWindow.document.write(
+          "<!doctype html><html><head><meta charset='utf-8' /><title>Carteirinha</title></head><body style='font-family:Arial,sans-serif;padding:24px;'><strong>Gerando carteirinha...</strong><p>Aguarde um instante.</p></body></html>"
+        );
+        popupWindow.document.close();
+      }
+    } catch {
+      popupWindow = null;
+    }
+
     setSaving(true);
     // Se já tem um ID interno (registro existente), mantém; senão gera novo
     const internalId = form.idInterno.trim() || await getNextInternalId();
@@ -575,8 +695,9 @@ export default function CensusFormSection({
       .map((child) => ({
         name: child.name.trim(),
         cpf: child.cpf.trim(),
+        observacao: child.observacao.trim(),
       }))
-      .filter((child) => child.name || child.cpf);
+      .filter((child) => child.name || child.cpf || child.observacao);
 
     const recordForPrint: CensusFormState = {
       ...form,
@@ -611,16 +732,20 @@ export default function CensusFormSection({
       dataNascimento: form.dataNascimento.trim(),
       naturalidade: form.naturalidade.trim(),
       estadoCivil: form.estadoCivil.trim(),
-      dtCasamento: form.dtCasamento.trim(),
+      dtCasamento: isSolteiro ? "" : form.dtCasamento.trim(),
       qtdeFilhos: form.qtdeFilhos.trim(),
-      nomeConjuge: form.nomeConjuge.trim(),
-      profissaoConjuge: form.profissaoConjuge.trim(),
-      grauInstrucaoConjuge: form.grauInstrucaoConjuge.trim(),
-      dataNascimentoConjuge: form.dataNascimentoConjuge.trim(),
-      cpfConjuge: form.cpfConjuge.trim(),
+      nomeConjuge: isSolteiro ? "" : form.nomeConjuge.trim(),
+      profissaoConjuge: isSolteiro ? "" : form.profissaoConjuge.trim(),
+      grauInstrucaoConjuge: isSolteiro ? "" : form.grauInstrucaoConjuge.trim(),
+      dataNascimentoConjuge: isSolteiro
+        ? ""
+        : form.dataNascimentoConjuge.trim(),
+      cpfConjuge: isSolteiro ? "" : form.cpfConjuge.trim(),
       filhos: cleanedChildren,
       dataConversao: form.dataConversao.trim(),
-      dataBatismoEspiritoSanto: form.dataBatismoEspiritoSanto.trim(),
+      dataBatismoEspiritoSanto: form.batizadoEspiritoSanto
+        ? form.dataBatismoEspiritoSanto.trim()
+        : "",
       origem: form.origem.trim(),
       informacoes: form.informacoes.trim(),
       localBatismo: form.localBatismo.trim(),
@@ -635,6 +760,11 @@ export default function CensusFormSection({
       cpfNormalized: normalizeCpf(recordForPrint.cpf),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+    };
+    const memberForCard = {
+      ...recordForPrint,
+      idInterno: internalId,
+      createdAt: payload.createdAt,
     };
 
     try {
@@ -653,8 +783,14 @@ export default function CensusFormSection({
       setExistingDocId(null);
       setSuccess(true);
       setSubmittedId(internalId);
+      setLastSubmittedMember(memberForCard);
+      void openMemberCard(memberForCard, popupWindow);
     } catch (err) {
+      console.error("Censo submit failed", err);
       setError("Não foi possível enviar o censo. Tente novamente.");
+      if (popupWindow && !popupWindow.closed) {
+        popupWindow.close();
+      }
     } finally {
       setSaving(false);
     }
@@ -711,6 +847,27 @@ export default function CensusFormSection({
                     ID interno: {submittedId}
                   </span>
                 ) : null}
+                {lastSubmittedMember ? (
+                  <button
+                    type="button"
+                    onClick={() => openMemberCard(lastSubmittedMember)}
+                    className="mt-3 inline-flex items-center justify-center rounded-full border border-emerald-200 px-4 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition"
+                  >
+                    Abrir carteirinha
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            {cardNotice ? (
+              <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                {cardNotice}
+              </div>
+            ) : null}
+
+            {cardError ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                {cardError}
               </div>
             ) : null}
 
@@ -872,12 +1029,24 @@ export default function CensusFormSection({
                   <select
                     ref={setorRef}
                     value={form.setor}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        setor: event.target.value,
-                      }))
-                    }
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setForm((prev) => {
+                        if (!value) {
+                          return { ...prev, setor: value };
+                        }
+                        const validCongregation = congregations.some(
+                          (item) =>
+                            item.sector === value &&
+                            item.name === prev.congregacao
+                        );
+                        return {
+                          ...prev,
+                          setor: value,
+                          congregacao: validCongregation ? prev.congregacao : "",
+                        };
+                      });
+                    }}
                     className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
                     required
                   >
@@ -938,7 +1107,7 @@ export default function CensusFormSection({
                   </label>
                   <input
                     type="text"
-                    value={form.telefone}
+                    value={formatPhone(form.telefone)}
                     onChange={(event) =>
                       setForm((prev) => ({
                         ...prev,
@@ -955,7 +1124,7 @@ export default function CensusFormSection({
                   </label>
                   <input
                     type="text"
-                    value={form.celular}
+                    value={formatPhone(form.celular)}
                     onChange={(event) =>
                       setForm((prev) => ({
                         ...prev,
@@ -1383,12 +1552,23 @@ export default function CensusFormSection({
                   </label>
                   <select
                     value={form.estadoCivil}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const value = event.target.value;
                       setForm((prev) => ({
                         ...prev,
-                        estadoCivil: event.target.value,
-                      }))
-                    }
+                        estadoCivil: value,
+                        ...(value === "Solteiro(a)"
+                          ? {
+                              dtCasamento: "",
+                              nomeConjuge: "",
+                              cpfConjuge: "",
+                              profissaoConjuge: "",
+                              grauInstrucaoConjuge: "",
+                              dataNascimentoConjuge: "",
+                            }
+                          : {}),
+                      }));
+                    }}
                     className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
                   >
                     <option value="">Selecione</option>
@@ -1399,27 +1579,29 @@ export default function CensusFormSection({
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Data do casamento
-                  </label>
-                  <input
-                    type="date"
-                    value={form.dtCasamento}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        dtCasamento: event.target.value,
-                      }))
-                    }
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
-                  />
-                  {form.dtCasamento ? (
-                    <p className="mt-1 text-xs text-gray-500">
-                      {formatDate(form.dtCasamento)}
-                    </p>
-                  ) : null}
-                </div>
+                {!isSolteiro ? (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Data do casamento
+                    </label>
+                    <input
+                      type="date"
+                      value={form.dtCasamento}
+                      onChange={(event) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          dtCasamento: event.target.value,
+                        }))
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                    />
+                    {form.dtCasamento ? (
+                      <p className="mt-1 text-xs text-gray-500">
+                        {formatDate(form.dtCasamento)}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -1431,111 +1613,120 @@ export default function CensusFormSection({
                     type="number"
                     min="0"
                     value={form.qtdeFilhos}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      const count = parseChildrenCount(value);
                       setForm((prev) => ({
                         ...prev,
-                        qtdeFilhos: event.target.value,
-                      }))
-                    }
+                        qtdeFilhos: value,
+                        filhos: ensureChildrenCount(prev.filhos, count),
+                      }));
+                    }}
                     className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Nome do cônjuge
-                  </label>
-                  <input
-                    type="text"
-                    value={form.nomeConjuge}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        nomeConjuge: event.target.value,
-                      }))
-                    }
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    CPF do cônjuge
-                  </label>
-                  <input
-                    type="text"
-                    value={formatCpf(form.cpfConjuge)}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        cpfConjuge: event.target.value,
-                      }))
-                    }
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
-                  />
-                </div>
+                {!isSolteiro ? (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Nome do cônjuge
+                      </label>
+                      <input
+                        type="text"
+                        value={form.nomeConjuge}
+                        onChange={(event) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            nomeConjuge: event.target.value,
+                          }))
+                        }
+                        className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        CPF do cônjuge
+                      </label>
+                      <input
+                        type="text"
+                        value={formatCpf(form.cpfConjuge)}
+                        onChange={(event) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            cpfConjuge: event.target.value,
+                          }))
+                        }
+                        className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                      />
+                    </div>
+                  </>
+                ) : null}
               </div>
 
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Profissão do cônjuge
-                  </label>
-                  <input
-                    type="text"
-                    value={form.profissaoConjuge}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        profissaoConjuge: event.target.value,
-                      }))
-                    }
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
-                  />
+              {!isSolteiro ? (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Profissão do cônjuge
+                    </label>
+                    <input
+                      type="text"
+                      value={form.profissaoConjuge}
+                      onChange={(event) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          profissaoConjuge: event.target.value,
+                        }))
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Grau de instrução (cônjuge)
+                    </label>
+                    <input
+                      type="text"
+                      value={form.grauInstrucaoConjuge}
+                      onChange={(event) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          grauInstrucaoConjuge: event.target.value,
+                        }))
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Nascimento do cônjuge
+                    </label>
+                    <input
+                      type="date"
+                      value={form.dataNascimentoConjuge}
+                      onChange={(event) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          dataNascimentoConjuge: event.target.value,
+                        }))
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                    />
+                    {form.dataNascimentoConjuge ? (
+                      <p className="mt-1 text-xs text-gray-500">
+                        {formatDate(form.dataNascimentoConjuge)}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Grau de instrução (cônjuge)
-                  </label>
-                  <input
-                    type="text"
-                    value={form.grauInstrucaoConjuge}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        grauInstrucaoConjuge: event.target.value,
-                      }))
-                    }
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Nascimento do cônjuge
-                  </label>
-                  <input
-                    type="date"
-                    value={form.dataNascimentoConjuge}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        dataNascimentoConjuge: event.target.value,
-                      }))
-                    }
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
-                  />
-                  {form.dataNascimentoConjuge ? (
-                    <p className="mt-1 text-xs text-gray-500">
-                      {formatDate(form.dataNascimentoConjuge)}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
+              ) : null}
             </fieldset>
 
             <fieldset className="space-y-4">
               <legend className="text-sm font-semibold uppercase tracking-wider text-gray-500">
                 Filhos
               </legend>
-              {form.filhos.length === 0 ? (
+              {qtdeFilhosCount === 0 ? (
                 <p className="text-sm text-gray-400">
                   Nenhum filho adicionado ainda.
                 </p>
@@ -1544,7 +1735,7 @@ export default function CensusFormSection({
                   {form.filhos.map((child, index) => (
                     <div
                       key={`child-${index}`}
-                      className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_auto]"
+                      className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_1fr]"
                     >
                       <input
                         type="text"
@@ -1553,35 +1744,30 @@ export default function CensusFormSection({
                           updateChild(index, "name", event.target.value)
                         }
                         className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
-                        placeholder="Nome do filho"
+                        placeholder={`Nome do filho ${index + 1}`}
                       />
                       <input
                         type="text"
-                        value={child.cpf}
+                        value={formatCpf(child.cpf)}
                         onChange={(event) =>
                           updateChild(index, "cpf", event.target.value)
                         }
                         className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
                         placeholder="CPF"
                       />
-                      <button
-                        type="button"
-                        onClick={() => removeChild(index)}
-                        className="rounded-xl border border-gray-200 px-4 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50"
-                      >
-                        Remover
-                      </button>
+                      <input
+                        type="text"
+                        value={child.observacao}
+                        onChange={(event) =>
+                          updateChild(index, "observacao", event.target.value)
+                        }
+                        className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                        placeholder="Observação"
+                      />
                     </div>
                   ))}
                 </div>
               )}
-              <button
-                type="button"
-                onClick={addChild}
-                className="rounded-xl border border-indigo-200 px-4 py-2 text-sm font-semibold text-indigo-600 hover:bg-indigo-50"
-              >
-                Adicionar filho
-              </button>
             </fieldset>
 
             <fieldset className="space-y-4">
@@ -1614,12 +1800,16 @@ export default function CensusFormSection({
                   <input
                     type="checkbox"
                     checked={form.batizadoEspiritoSanto}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const checked = event.target.checked;
                       setForm((prev) => ({
                         ...prev,
-                        batizadoEspiritoSanto: event.target.checked,
-                      }))
-                    }
+                        batizadoEspiritoSanto: checked,
+                        dataBatismoEspiritoSanto: checked
+                          ? prev.dataBatismoEspiritoSanto
+                          : "",
+                      }));
+                    }}
                     className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                   />
                   <span className="text-sm text-gray-600">
@@ -1628,28 +1818,6 @@ export default function CensusFormSection({
                 </div>
               </div>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Data do batismo no Espírito Santo
-                  </label>
-                  <input
-                    type="date"
-                    value={form.dataBatismoEspiritoSanto}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        dataBatismoEspiritoSanto: event.target.value,
-                      }))
-                    }
-                    disabled={!form.batizadoEspiritoSanto}
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none disabled:bg-gray-100"
-                  />
-                  {form.dataBatismoEspiritoSanto ? (
-                    <p className="mt-1 text-xs text-gray-500">
-                      {formatDate(form.dataBatismoEspiritoSanto)}
-                    </p>
-                  ) : null}
-                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Origem
@@ -1666,6 +1834,29 @@ export default function CensusFormSection({
                     className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
                   />
                 </div>
+                {form.batizadoEspiritoSanto ? (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Data do batismo no Espírito Santo
+                    </label>
+                    <input
+                      type="date"
+                      value={form.dataBatismoEspiritoSanto}
+                      onChange={(event) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          dataBatismoEspiritoSanto: event.target.value,
+                        }))
+                      }
+                      className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                    />
+                    {form.dataBatismoEspiritoSanto ? (
+                      <p className="mt-1 text-xs text-gray-500">
+                        {formatDate(form.dataBatismoEspiritoSanto)}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
