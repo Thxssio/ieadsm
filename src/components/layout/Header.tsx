@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { LayoutDashboard, LogIn, LogOut, Menu, X } from "lucide-react";
@@ -19,9 +19,11 @@ export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const headerRef = useRef<HTMLElement | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [menuMaxHeight, setMenuMaxHeight] = useState<number | null>(null);
   const { isAuthenticated, logout } = useAuth();
 
   const isHome = pathname === "/";
@@ -35,6 +37,45 @@ export default function Header() {
     handleScroll();
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  useEffect(() => {
+    if (!headerRef.current) return;
+    const headerHeight = headerRef.current.offsetHeight;
+    const viewportHeight =
+      window.visualViewport?.height ?? window.innerHeight;
+    setMenuMaxHeight(Math.max(viewportHeight - headerHeight, 0));
+  }, [isScrolled, isMenuOpen]);
+
+  useEffect(() => {
+    if (!headerRef.current) return;
+    const updateMenuMetrics = () => {
+      if (!headerRef.current) return;
+      const headerHeight = headerRef.current.offsetHeight;
+      const viewportHeight =
+        window.visualViewport?.height ?? window.innerHeight;
+      setMenuMaxHeight(Math.max(viewportHeight - headerHeight, 0));
+    };
+
+    updateMenuMetrics();
+    const handleResize = () => updateMenuMetrics();
+    const visualViewport = window.visualViewport;
+    window.addEventListener("resize", handleResize);
+    visualViewport?.addEventListener("resize", handleResize);
+    visualViewport?.addEventListener("scroll", handleResize);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(handleResize);
+      resizeObserver.observe(headerRef.current);
+    }
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      visualViewport?.removeEventListener("resize", handleResize);
+      visualViewport?.removeEventListener("scroll", handleResize);
+      resizeObserver?.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -85,6 +126,7 @@ export default function Header() {
 
   return (
     <header
+      ref={headerRef}
       className={`fixed inset-x-0 top-0 z-50 transition-all duration-500 ease-in-out ${
         isSolid
           ? "bg-white/95 backdrop-blur-md shadow-md py-2"
@@ -104,7 +146,7 @@ export default function Header() {
               src={isSolid ? LOGO_BLACK : LOGO_WHITE}
               alt="Logo IEADSM"
               className={`w-auto transition-all duration-500 ease-in-out object-contain ${
-                isScrolled ? "h-10 md:h-16" : "h-14 md:h-[108px]"
+                isScrolled ? "h-[52px] md:h-16" : "h-[73px] md:h-[108px]"
               }`}
             />
           </Link>
@@ -187,18 +229,30 @@ export default function Header() {
                   </button>
                 </>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsLoginOpen(true)}
-                  className={`px-6 py-2.5 rounded-full font-bold transition-all shadow-lg hover:shadow-xl flex items-center gap-2 transform hover:-translate-y-0.5 ${
-                    isSolid
-                      ? "bg-blue-600 hover:bg-blue-700 text-white"
-                      : "bg-white text-blue-900 hover:bg-blue-50"
-                  }`}
-                >
-                  <LogIn size={18} />
-                  <span>Acesso</span>
-                </button>
+                <>
+                  <Link
+                    href="/carteirinha"
+                    className={`px-5 py-2.5 rounded-full font-bold transition-all border flex items-center gap-2 ${
+                      isSolid
+                        ? "border-slate-200 text-slate-700 hover:bg-slate-50"
+                        : "border-white/40 text-white hover:bg-white/15"
+                    }`}
+                  >
+                    Carteirinha
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setIsLoginOpen(true)}
+                    className={`px-6 py-2.5 rounded-full font-bold transition-all shadow-lg hover:shadow-xl flex items-center gap-2 transform hover:-translate-y-0.5 ${
+                      isSolid
+                        ? "bg-blue-600 hover:bg-blue-700 text-white"
+                        : "bg-white text-blue-900 hover:bg-blue-50"
+                    }`}
+                  >
+                    <LogIn size={18} />
+                    <span>Acesso</span>
+                  </button>
+                </>
               )}
             </div>
 
@@ -218,11 +272,21 @@ export default function Header() {
 
       {isMenuOpen && (
         <div
-          className={`lg:hidden absolute top-full left-0 w-full border-t shadow-xl animate-fade-in max-h-[85vh] overflow-y-auto ${mobileMenuBg} ${
+          className={`lg:hidden absolute top-full left-0 w-full border-t shadow-xl animate-fade-in overflow-y-auto ${mobileMenuBg} ${
             isSolid ? "border-slate-100" : "border-white/10"
           }`}
+          style={
+            menuMaxHeight !== null
+              ? { maxHeight: `${menuMaxHeight}px` }
+              : undefined
+          }
         >
-          <div className="px-4 py-6 space-y-2">
+          <div
+            className="px-4 py-6 space-y-2"
+            style={{
+              paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)",
+            }}
+          >
             <Link
               href="/"
               onClick={() => setIsMenuOpen(false)}
@@ -278,21 +342,34 @@ export default function Header() {
                   </button>
                 </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMenuOpen(false);
-                    setIsLoginOpen(true);
-                  }}
-                  className={`w-full px-5 py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md text-lg ${
-                    isSolid
-                      ? "bg-blue-600 hover:bg-blue-700 text-white"
-                      : "bg-white text-blue-900 hover:bg-white/90"
-                  }`}
-                >
-                  <LogIn size={20} />
-                  Acesso
-                </button>
+                <div className="space-y-3">
+                  <Link
+                    href="/carteirinha"
+                    onClick={() => setIsMenuOpen(false)}
+                    className={`w-full px-5 py-4 rounded-xl font-bold flex items-center justify-center gap-2 text-lg border ${
+                      isSolid
+                        ? "border-slate-200 text-slate-700 hover:bg-slate-50"
+                        : "border-white/40 text-white hover:bg-white/15"
+                    }`}
+                  >
+                    Carteirinha
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      setIsLoginOpen(true);
+                    }}
+                    className={`w-full px-5 py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md text-lg ${
+                      isSolid
+                        ? "bg-blue-600 hover:bg-blue-700 text-white"
+                        : "bg-white text-blue-900 hover:bg-white/90"
+                    }`}
+                  >
+                    <LogIn size={20} />
+                    Acesso
+                  </button>
+                </div>
               )}
             </div>
           </div>

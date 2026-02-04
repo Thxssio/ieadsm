@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
-export default function AdminMembersRedirect() {
-  redirect("/admin/usuarios");
+export default function AdminMembrosRedirect() {
+  redirect("/admin/secretaria");
 }

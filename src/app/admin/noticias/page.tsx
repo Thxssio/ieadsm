@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
+import { FileText } from "lucide-react";
 import Image from "next/image";
 import {
   addDoc,
@@ -18,6 +19,8 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useToast } from "@/components/ui/Toast";
 import { db, storage } from "@/lib/firebase/client";
+import { deleteStorageObject } from "@/lib/firebase/storageUtils";
+import { AdminHeader } from "@/components/admin/AdminHeader";
 
 const IMAGE_OPTIONS = [
   { label: "Capa padrão", value: "/capa.png" },
@@ -75,6 +78,10 @@ export default function AdminNewsPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [isDraggingImage, setIsDraggingImage] = useState(false);
+  const [previousImage, setPreviousImage] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 5;
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
@@ -109,6 +116,38 @@ export default function AdminNewsPage() {
     [form]
   );
 
+  const filteredPosts = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return posts;
+    return posts.filter((post) => {
+      const hay = [post.title, post.excerpt, post.content]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(term);
+    });
+  }, [posts, searchTerm]);
+
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredPosts.length / pageSize)),
+    [filteredPosts.length, pageSize]
+  );
+
+  const paginatedPosts = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredPosts.slice(start, start + pageSize);
+  }, [filteredPosts, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!db || !canSubmit) {
@@ -133,6 +172,9 @@ export default function AdminNewsPage() {
           image: form.image,
           updatedAt: serverTimestamp(),
         });
+        if (previousImage && previousImage !== form.image) {
+          await deleteStorageObject(previousImage);
+        }
       } else {
         await addDoc(collection(db, "news"), {
           title: form.title.trim(),
@@ -145,6 +187,7 @@ export default function AdminNewsPage() {
       }
       setForm(emptyForm);
       setEditingId(null);
+      setPreviousImage("");
       pushToast({
         type: "success",
         title: isEditing ? "Notícia atualizada" : "Notícia publicada",
@@ -163,6 +206,7 @@ export default function AdminNewsPage() {
 
   const handleEdit = (post: NewsPost) => {
     setEditingId(post.id);
+    setPreviousImage(post.image || "");
     setForm({
       title: post.title || "",
       excerpt: post.excerpt || "",
@@ -173,6 +217,7 @@ export default function AdminNewsPage() {
 
   const handleCancel = () => {
     setEditingId(null);
+    setPreviousImage("");
     setForm(emptyForm);
   };
 
@@ -188,7 +233,11 @@ export default function AdminNewsPage() {
     const ok = window.confirm("Deseja excluir esta notícia?");
     if (!ok) return;
     try {
+      const target = posts.find((item) => item.id === postId);
       await deleteDoc(doc(db, "news", postId));
+      if (target?.image) {
+        await deleteStorageObject(target.image);
+      }
       pushToast({
         type: "success",
         title: "Notícia removida",
@@ -269,24 +318,14 @@ export default function AdminNewsPage() {
   }
 
   return (
-    <main className="min-h-screen pb-20 bg-slate-50">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-10">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Notícias</h1>
-            <p className="text-slate-500">
-              Crie e edite os comunicados publicados na home.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => router.push("/admin")}
-            className="inline-flex items-center text-blue-600 font-bold hover:text-blue-800 transition-colors bg-white px-6 py-3 rounded-full shadow-sm hover:shadow-md"
-          >
-            Voltar ao painel
-          </button>
-        </div>
-
+    <div className="min-h-screen bg-slate-50 pb-20 font-sans text-slate-900">
+      <AdminHeader
+        title="Notícias"
+        subtitle="Crie e edite os comunicados publicados na home."
+        icon={<FileText className="w-6 h-6" />}
+        right={<span>{posts.length} notícias</span>}
+      />
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-10">
           <section className="bg-white border border-slate-100 rounded-3xl p-8 shadow-sm">
             <h2 className="text-xl font-bold text-slate-900 mb-6">
@@ -405,6 +444,19 @@ export default function AdminNewsPage() {
                       Enviando imagem...
                     </span>
                   ) : null}
+                  {form.image ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void deleteStorageObject(form.image);
+                        setForm((prev) => ({ ...prev, image: defaultImage }));
+                        setPreviousImage("");
+                      }}
+                      className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                    >
+                      Remover imagem
+                    </button>
+                  ) : null}
                 </div>
                 {uploadError && (
                   <p className="text-xs text-red-600 mt-2">{uploadError}</p>
@@ -437,16 +489,33 @@ export default function AdminNewsPage() {
           </section>
 
           <section className="bg-white border border-slate-100 rounded-3xl p-8 shadow-sm">
-            <h2 className="text-xl font-bold text-slate-900 mb-6">
-              Publicadas
-            </h2>
+            <div className="flex flex-col gap-4 mb-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900">Publicadas</h2>
+                <span className="text-sm text-slate-500">
+                  {filteredPosts.length} notícia
+                  {filteredPosts.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all text-sm"
+                placeholder="Buscar por título, resumo ou conteúdo..."
+              />
+            </div>
             {loading ? (
               <p className="text-slate-500">Carregando notícias...</p>
-            ) : posts.length === 0 ? (
-              <p className="text-slate-500">Nenhuma notícia publicada ainda.</p>
+            ) : filteredPosts.length === 0 ? (
+              <p className="text-slate-500">
+                {searchTerm.trim()
+                  ? "Nenhuma notícia encontrada."
+                  : "Nenhuma notícia publicada ainda."}
+              </p>
             ) : (
               <div className="space-y-4">
-                {posts.map((post) => (
+                {paginatedPosts.map((post) => (
                   <div
                     key={post.id}
                     className="border border-slate-100 rounded-2xl overflow-hidden"
@@ -492,9 +561,34 @@ export default function AdminNewsPage() {
                 ))}
               </div>
             )}
+            {!loading && filteredPosts.length > pageSize ? (
+              <div className="mt-6 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                  disabled={page === 1}
+                  className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Anterior
+                </button>
+                <span className="text-xs text-slate-500">
+                  Página {page} de {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPage((prev) => Math.min(totalPages, prev + 1))
+                  }
+                  disabled={page === totalPages}
+                  className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Próxima
+                </button>
+              </div>
+            ) : null}
           </section>
         </div>
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }

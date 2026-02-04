@@ -2,12 +2,14 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { Settings } from "lucide-react";
 import { doc, setDoc } from "firebase/firestore";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useToast } from "@/components/ui/Toast";
 import { db } from "@/lib/firebase/client";
 import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
 import { defaultSiteSettings, type SiteSettings } from "@/data/siteContent";
+import { AdminHeader } from "@/components/admin/AdminHeader";
 
 export default function AdminSettingsPage() {
   const router = useRouter();
@@ -71,22 +73,14 @@ export default function AdminSettingsPage() {
   }
 
   return (
-    <main className="min-h-screen pb-20 bg-slate-50">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-10">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Configurações</h1>
-            <p className="text-slate-500">Atualize os textos do site.</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => router.push("/admin")}
-            className="inline-flex items-center text-blue-600 font-bold hover:text-blue-800 transition-colors bg-white px-6 py-3 rounded-full shadow-sm hover:shadow-md"
-          >
-            Voltar ao painel
-          </button>
-        </div>
-
+    <div className="min-h-screen bg-slate-50 pb-20 font-sans text-slate-900">
+      <AdminHeader
+        title="Configurações"
+        subtitle="Atualize os textos do site."
+        icon={<Settings className="w-6 h-6" />}
+        right={<span>Ajustes do site</span>}
+      />
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
           <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
@@ -103,23 +97,6 @@ export default function AdminSettingsPage() {
               className="inline-flex items-center text-blue-600 font-bold hover:text-blue-800 transition-colors bg-blue-50 px-5 py-2.5 rounded-full shadow-sm hover:shadow-md"
             >
               Gerenciar diretoria
-            </button>
-          </div>
-          <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">
-                Setores e Congregações
-              </h2>
-              <p className="text-sm text-slate-500 mt-1">
-                Cadastre congregações, endereços e fotos.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => router.push("/admin/congregacoes")}
-              className="inline-flex items-center text-blue-600 font-bold hover:text-blue-800 transition-colors bg-blue-50 px-5 py-2.5 rounded-full shadow-sm hover:shadow-md"
-            >
-              Gerenciar congregações
             </button>
           </div>
         </div>
@@ -594,19 +571,6 @@ export default function AdminSettingsPage() {
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Setores e congregações
-                </label>
-                <input
-                  type="text"
-                  value={form.institutionalSectorsTitle}
-                  onChange={(event) =>
-                    handleChange("institutionalSectorsTitle", event.target.value)
-                  }
-                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
-                />
-              </div>
             </div>
           </section>
 
@@ -737,26 +701,6 @@ export default function AdminSettingsPage() {
             </div>
           </section>
 
-          <section className="space-y-4">
-            <h2 className="text-xl font-bold text-slate-900">
-              Setores e congregações
-            </h2>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Conteúdo (uma linha por item; inicie com "SETOR 01 | NOME" e
-                abaixo liste as congregações)
-              </label>
-              <textarea
-                value={form.institutionalSectorsContent}
-                onChange={(event) =>
-                  handleChange("institutionalSectorsContent", event.target.value)
-                }
-                rows={12}
-                className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
-              />
-            </div>
-          </section>
-
           <div className="flex flex-wrap gap-3">
             <button
               type="submit"
@@ -767,7 +711,7 @@ export default function AdminSettingsPage() {
             </button>
           </div>
         </form>
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }

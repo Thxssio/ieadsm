@@ -5,7 +5,9 @@ import {
   getFirestore,
   initializeFirestore,
   type Firestore,
-  enableIndexedDbPersistence,
+  type FirestoreSettings,
+  persistentLocalCache,
+  persistentMultipleTabManager,
 } from "firebase/firestore";
 
 const parsedWebAppConfig = (() => {
@@ -66,43 +68,38 @@ type FirebaseGlobal = typeof globalThis & {
   __ieadsm_firestore__?: Firestore | null;
   __ieadsm_auth__?: Auth | null;
   __ieadsm_storage__?: FirebaseStorage | null;
-  __ieadsm_firestore_cache__?: Promise<void>;
 };
 
 const firebaseGlobal = globalThis as FirebaseGlobal;
 
-const enableFirestoreCache = (instance: Firestore) => {
-  if (typeof window === "undefined") return;
-  if (firebaseGlobal.__ieadsm_firestore_cache__) return;
-  firebaseGlobal.__ieadsm_firestore_cache__ = enableIndexedDbPersistence(
-    instance
-  ).catch(() => {
-    // Ignore persistence errors (multiple tabs, unsupported browsers, etc.)
-  });
+const buildFirestoreSettings = () => {
+  const settings: FirestoreSettings = {
+    ignoreUndefinedProperties: true,
+    experimentalForceLongPolling: true,
+  };
+  if (typeof window !== "undefined") {
+    settings.localCache = persistentLocalCache({
+      tabManager: persistentMultipleTabManager(),
+    });
+  }
+  return settings;
 };
 
 export const db = app
   ? (() => {
       if (firebaseGlobal.__ieadsm_firestore__ !== undefined) {
-        if (firebaseGlobal.__ieadsm_firestore__) {
-          enableFirestoreCache(firebaseGlobal.__ieadsm_firestore__);
-        }
         return firebaseGlobal.__ieadsm_firestore__;
       }
       let instance: Firestore;
       try {
         instance = initializeFirestore(
           app,
-          {
-            ignoreUndefinedProperties: true,
-            experimentalForceLongPolling: true,
-          },
+          buildFirestoreSettings(),
           databaseId
         );
       } catch {
         instance = getFirestore(app, databaseId);
       }
-      enableFirestoreCache(instance);
       firebaseGlobal.__ieadsm_firestore__ = instance;
       return instance;
     })()

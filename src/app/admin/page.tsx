@@ -7,8 +7,8 @@ import {
   CalendarDays,
   ClipboardList,
   FileText,
+  FolderOpen,
   Link2,
-  LogOut,
   MapPin,
   ShieldCheck,
   Megaphone,
@@ -20,7 +20,7 @@ import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
 
 export default function AdminPage() {
   const router = useRouter();
-  const { isAuthenticated, isReady, logout, user } = useAuth();
+  const { isAuthenticated, isReady, user } = useAuth();
   const { settings } = useSiteSettings();
   const adminMapUrl = settings.adminMapEmbedUrl?.trim();
 
@@ -58,15 +58,6 @@ export default function AdminPage() {
               Bem-vindo de volta, {firstName}.
             </p>
           </div>
-          <button
-            onClick={async () => {
-              await logout();
-              router.push("/");
-            }}
-            className="px-5 py-2.5 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all flex items-center gap-2"
-          >
-            <LogOut size={18} /> Sair
-          </button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
@@ -155,6 +146,19 @@ export default function AdminPage() {
             <h3 className="font-bold text-lg text-slate-800">Patrimônio</h3>
             <p className="text-sm text-slate-500 mt-2">
               Controle de itens e etiquetas com QR.
+            </p>
+          </Link>
+
+          <Link
+            href="/admin/secretaria"
+            className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow cursor-pointer group"
+          >
+            <div className="w-12 h-12 bg-cyan-100 text-cyan-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-cyan-600 group-hover:text-white transition-colors">
+              <FolderOpen size={24} />
+            </div>
+            <h3 className="font-bold text-lg text-slate-800">Secretaria</h3>
+            <p className="text-sm text-slate-500 mt-2">
+              Fichas e documentos dos membros.
             </p>
           </Link>
 

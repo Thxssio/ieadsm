@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getAdminAuth } from "@/lib/firebase/admin";
+import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 
 const getToken = (request: NextRequest) => {
   const header = request.headers.get("authorization") || "";
@@ -39,6 +39,19 @@ export async function GET(request: NextRequest) {
       );
     }
     const list = await adminAuth.listUsers(1000);
+    const adminDb = getAdminDb();
+    const flags: Record<string, boolean> = {};
+    if (adminDb && list.users.length > 0) {
+      const refs = list.users.map((user) =>
+        adminDb.collection("userFlags").doc(user.uid)
+      );
+      const snaps = await adminDb.getAll(...refs);
+      snaps.forEach((snap) => {
+        if (snap.exists) {
+          flags[snap.id] = Boolean(snap.get("mustChangePassword"));
+        }
+      });
+    }
     const users = list.users.map((user) => ({
       uid: user.uid,
       email: user.email,
@@ -47,6 +60,7 @@ export async function GET(request: NextRequest) {
       createdAt: user.metadata.creationTime,
       lastSignIn: user.metadata.lastSignInTime,
       providerData: user.providerData.map((provider) => provider.providerId),
+      mustChangePassword: flags[user.uid] ?? false,
     }));
     return NextResponse.json({ users });
   } catch (error) {
@@ -84,6 +98,22 @@ export async function POST(request: NextRequest) {
       password,
       displayName,
     });
+    const adminDb = getAdminDb();
+    if (adminDb) {
+      await adminDb
+        .collection("userFlags")
+        .doc(user.uid)
+        .set(
+          {
+            uid: user.uid,
+            email: user.email ?? email,
+            displayName: user.displayName ?? displayName ?? "",
+            mustChangePassword: true,
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+    }
     return NextResponse.json({ user });
   } catch (error) {
     return NextResponse.json(
@@ -116,6 +146,10 @@ export async function DELETE(request: NextRequest) {
       );
     }
     await adminAuth.deleteUser(uid);
+    const adminDb = getAdminDb();
+    if (adminDb) {
+      await adminDb.collection("userFlags").doc(uid).delete();
+    }
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json(

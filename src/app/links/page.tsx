@@ -6,6 +6,7 @@ import Image from "next/image";
 import { AnimatePresence, motion, type Variants } from "framer-motion";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
+import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
 import { defaultLinks, type LinkItem } from "@/data/links";
 
 /* ---------- Ícones ---------- */
@@ -31,6 +32,7 @@ const ExternalLinkIcon = () => (
 const sanitizeUrl = (url?: string) => {
   const trimmed = (url || "").trim();
   if (!trimmed) return "";
+  if (trimmed.startsWith("/")) return trimmed;
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 };
 
@@ -108,6 +110,7 @@ export default function LinktreePage() {
   const [links, setLinks] = useState<LinkItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showToast, setShowToast] = useState(false);
+  const { settings } = useSiteSettings();
 
   useEffect(() => {
     setIsMounted(true);
@@ -131,14 +134,30 @@ export default function LinktreePage() {
 
   const safeLinks = useMemo(() => {
     const source = !loading && links.length === 0 ? defaultLinks : links;
-    return [...source]
+    const baseLinks = source.filter((link) => link.id !== "censo");
+    const censoExists = baseLinks.some((link) =>
+      (link.text || "").toLowerCase().includes("censo")
+    );
+    const censoLink: LinkItem = {
+      id: "censo",
+      text: settings.censusTitle || "Censo de Membros",
+      href: "/eventos?censo=1",
+      icon: "/logo.png",
+      order: -10,
+    };
+    const withCenso =
+      settings.censusOpen && !censoExists
+        ? [censoLink, ...baseLinks]
+        : baseLinks;
+
+    return [...withCenso]
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       .map((link) => ({
         ...link,
         href: sanitizeUrl(link.href),
         icon: safeIcon(link.icon) || faviconFromUrl(link.href) || autoIcon(),
       }));
-  }, [links, loading]);
+  }, [links, loading, settings.censusTitle, settings.censusOpen]);
 
   if (!isMounted) return null;
 

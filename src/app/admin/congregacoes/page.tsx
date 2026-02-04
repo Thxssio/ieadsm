@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
+import { Users } from "lucide-react";
 import {
   addDoc,
   collection,
@@ -14,6 +15,8 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useToast } from "@/components/ui/Toast";
 import { db, storage } from "@/lib/firebase/client";
+import { deleteStorageObject } from "@/lib/firebase/storageUtils";
+import { AdminHeader } from "@/components/admin/AdminHeader";
 
 type CongregationDoc = {
   id: string;
@@ -79,6 +82,10 @@ export default function AdminCongregacoesPage() {
   const [cepLoading, setCepLoading] = useState(false);
   const [cepError, setCepError] = useState("");
   const [lastCepLookup, setLastCepLookup] = useState("");
+  const [previousPhoto, setPreviousPhoto] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
@@ -156,11 +163,15 @@ export default function AdminCongregacoesPage() {
     try {
       if (editingId) {
         await updateDoc(doc(db, "congregations", editingId), payload);
+        if (previousPhoto && previousPhoto !== form.photo) {
+          await deleteStorageObject(previousPhoto);
+        }
       } else {
         await addDoc(collection(db, "congregations"), payload);
       }
       setForm(emptyForm);
       setEditingId(null);
+      setPreviousPhoto("");
       pushToast({
         type: "success",
         title: isEditing ? "Congregação atualizada" : "Congregação adicionada",
@@ -187,6 +198,7 @@ export default function AdminCongregacoesPage() {
     }, 1200);
     setCepError("");
     setLastCepLookup("");
+    setPreviousPhoto(item.photo || "");
     setForm({
       sector: item.sector || "",
       sectorOrder: item.sectorOrder ?? 1,
@@ -208,6 +220,7 @@ export default function AdminCongregacoesPage() {
 
   const handleCancel = () => {
     setEditingId(null);
+    setPreviousPhoto("");
     setForm(emptyForm);
     setCepError("");
     setLastCepLookup("");
@@ -326,7 +339,11 @@ export default function AdminCongregacoesPage() {
     if (!ok) return;
     setDeletingId(itemId);
     try {
+      const target = items.find((item) => item.id === itemId);
       await deleteDoc(doc(db, "congregations", itemId));
+      if (target?.photo) {
+        await deleteStorageObject(target.photo);
+      }
       pushToast({
         type: "success",
         title: "Congregação removida",
@@ -357,6 +374,44 @@ export default function AdminCongregacoesPage() {
     });
   }, [items]);
 
+  const filteredItems = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return sortedItems;
+    return sortedItems.filter((item) => {
+      const hay = [
+        item.name,
+        item.sector,
+        item.city,
+        item.state,
+        item.leaders,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(term);
+    });
+  }, [sortedItems, searchTerm]);
+
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredItems.length / pageSize)),
+    [filteredItems.length, pageSize]
+  );
+
+  const paginatedItems = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredItems.slice(start, start + pageSize);
+  }, [filteredItems, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
   if (!isReady) {
     return <div className="min-h-screen pb-20 bg-slate-50" />;
   }
@@ -366,26 +421,14 @@ export default function AdminCongregacoesPage() {
   }
 
   return (
-    <main className="min-h-screen pb-20 bg-slate-50">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-10">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">
-              Setores e Congregações
-            </h1>
-            <p className="text-slate-500">
-              Cadastre congregações com endereço e foto.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => router.push("/admin")}
-            className="inline-flex items-center text-blue-600 font-bold hover:text-blue-800 transition-colors bg-white px-6 py-3 rounded-full shadow-sm hover:shadow-md"
-          >
-            Voltar ao painel
-          </button>
-        </div>
-
+    <div className="min-h-screen bg-slate-50 pb-20 font-sans text-slate-900">
+      <AdminHeader
+        title="Setores e Congregações"
+        subtitle="Cadastre congregações com endereço e foto."
+        icon={<Users className="w-6 h-6" />}
+        right={<span>{items.length} congregações</span>}
+      />
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {!db ? (
           <div className="bg-white border border-slate-100 rounded-3xl p-8 shadow-sm">
             <p className="text-slate-500">
@@ -531,6 +574,19 @@ export default function AdminCongregacoesPage() {
                       <span className="text-xs text-slate-500">
                         Enviando imagem...
                       </span>
+                    ) : null}
+                    {form.photo ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void deleteStorageObject(form.photo);
+                          setForm((prev) => ({ ...prev, photo: "" }));
+                          setPreviousPhoto("");
+                        }}
+                        className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                      >
+                        Remover foto
+                      </button>
                     ) : null}
                   </div>
                   {uploadError && (
@@ -741,18 +797,35 @@ export default function AdminCongregacoesPage() {
             </section>
 
             <section className="bg-white border border-slate-100 rounded-3xl p-8 shadow-sm">
-              <h2 className="text-xl font-bold text-slate-900 mb-6">
-                Congregações cadastradas
-              </h2>
+              <div className="flex flex-col gap-4 mb-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold text-slate-900">
+                    Congregações cadastradas
+                  </h2>
+                  <span className="text-sm text-slate-500">
+                    {filteredItems.length} congregação
+                    {filteredItems.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all text-sm"
+                  placeholder="Buscar por nome, setor, cidade..."
+                />
+              </div>
               {loading ? (
                 <p className="text-slate-500">Carregando...</p>
-              ) : sortedItems.length === 0 ? (
+              ) : filteredItems.length === 0 ? (
                 <p className="text-slate-500">
-                  Nenhuma congregação cadastrada ainda.
+                  {searchTerm.trim()
+                    ? "Nenhuma congregação encontrada."
+                    : "Nenhuma congregação cadastrada ainda."}
                 </p>
               ) : (
                 <div className="space-y-4">
-                  {sortedItems.map((item) => (
+                  {paginatedItems.map((item) => (
                     <div
                       key={item.id}
                       className={`border border-slate-100 rounded-2xl p-4 flex gap-4 items-start transition ${
@@ -804,10 +877,35 @@ export default function AdminCongregacoesPage() {
                   ))}
                 </div>
               )}
+              {!loading && filteredItems.length > pageSize ? (
+                <div className="mt-6 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                    disabled={page === 1}
+                    className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Anterior
+                  </button>
+                  <span className="text-xs text-slate-500">
+                    Página {page} de {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPage((prev) => Math.min(totalPages, prev + 1))
+                    }
+                    disabled={page === totalPages}
+                    className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Próxima
+                  </button>
+                </div>
+              ) : null}
             </section>
           </div>
         )}
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }

@@ -25,6 +25,7 @@ import { useAuth } from "@/components/providers/AuthProvider";
 import { useToast } from "@/components/ui/Toast";
 import { db } from "@/lib/firebase/client";
 import { serviceTimes, type ServiceTime } from "@/data/site";
+import { AdminHeader } from "@/components/admin/AdminHeader";
 
 const ICON_OPTIONS = [
   "Sun",
@@ -218,22 +219,14 @@ export default function AdminAgendaPage() {
   }
 
   return (
-    <main className="min-h-screen pb-20 bg-slate-50">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-10">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Agenda de Cultos</h1>
-            <p className="text-slate-500">Atualize os horários semanais.</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => router.push("/admin")}
-            className="inline-flex items-center text-blue-600 font-bold hover:text-blue-800 transition-colors bg-white px-6 py-3 rounded-full shadow-sm hover:shadow-md"
-          >
-            Voltar ao painel
-          </button>
-        </div>
-
+    <div className="min-h-screen bg-slate-50 pb-20 font-sans text-slate-900">
+      <AdminHeader
+        title="Agenda de Cultos"
+        subtitle="Atualize os horários semanais."
+        icon={<Clock className="w-6 h-6" />}
+        right={<span>{items.length} horários cadastrados</span>}
+      />
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-10">
           <section className="bg-white border border-slate-100 rounded-3xl p-8 shadow-sm">
             <h2 className="text-xl font-bold text-slate-900 mb-6">
@@ -422,7 +415,7 @@ export default function AdminAgendaPage() {
             )}
           </section>
         </div>
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }

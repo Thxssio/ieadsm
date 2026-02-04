@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, FileText, X, ArrowRight, CalendarDays } from "lucide-react"; // Adicionei CalendarDays
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { ExternalLink, FileText, X, ArrowRight, CalendarDays, UserPlus } from "lucide-react"; // Adicionei CalendarDays
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { defaultLinks, type LinkItem } from "@/data/links";
+import CensusFormSection from "@/components/sections/CensusFormSection";
+import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
 
 // --- Funções Auxiliares (Mantidas iguais) ---
 const normalizeUrl = (raw?: string) => {
@@ -41,10 +44,13 @@ const buildEmbedUrl = (raw?: string) => {
   }
 };
 
-export default function EventosPage() {
+function EventosPageContent() {
+  const { settings } = useSiteSettings();
   const [links, setLinks] = useState<LinkItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeForm, setActiveForm] = useState<LinkItem | null>(null);
+  const [activeCenso, setActiveCenso] = useState(false);
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     if (!db) {
@@ -73,15 +79,24 @@ export default function EventosPage() {
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   }, [links, loading]);
 
+  useEffect(() => {
+    if (searchParams?.get("censo") === "1" && settings.censusOpen) {
+      setActiveCenso(true);
+    }
+  }, [searchParams, settings.censusOpen]);
+
   // Fechar com ESC
   useEffect(() => {
-    if (!activeForm) return;
+    if (!activeForm && !activeCenso) return;
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setActiveForm(null);
+      if (event.key === "Escape") {
+        setActiveForm(null);
+        setActiveCenso(false);
+      }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [activeForm]);
+  }, [activeForm, activeCenso]);
 
   return (
     <main className="min-h-screen bg-gray-50 selection:bg-indigo-100 selection:text-indigo-900">
@@ -121,7 +136,10 @@ export default function EventosPage() {
                   <div>
                       <p className="text-sm font-medium text-gray-500">Disponíveis agora</p>
                       <p className="text-xl font-bold text-gray-900">
-                          {formLinks.length} <span className="text-sm font-normal text-gray-400">formulários</span>
+                          {formLinks.length + (settings.censusOpen ? 1 : 0)}{" "}
+                          <span className="text-sm font-normal text-gray-400">
+                            formulários
+                          </span>
                       </p>
                   </div>
               </div>
@@ -130,23 +148,63 @@ export default function EventosPage() {
       </div>
       {/* Grid de Cards */}
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
-        {loading ? (
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {[1, 2, 3].map((item) => (
-              <div key={item} className="h-64 rounded-3xl bg-gray-200/50 animate-pulse" />
-            ))}
-          </div>
-        ) : formLinks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-gray-300 bg-white p-12 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-50">
-              <FileText className="h-8 w-8 text-gray-400" />
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <article className="group relative flex flex-col justify-between overflow-hidden rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-200 transition-all hover:shadow-xl hover:shadow-emerald-500/10 hover:ring-emerald-500/20 hover:-translate-y-1">
+            <div>
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-md shadow-emerald-200">
+                  <UserPlus className="h-5 w-5" />
+                </div>
+                <div className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-600">
+                  Censo
+                </div>
+              </div>
+              <h3 className="line-clamp-2 text-xl font-bold text-gray-900 group-hover:text-emerald-600 transition-colors">
+                {settings.censusTitle || "Censo de Membros"}
+              </h3>
+              <p className="mt-3 text-sm text-gray-500">
+                {settings.censusDescription ||
+                  "Atualize seus dados e colabore com o censo da igreja."}
+              </p>
             </div>
-            <h3 className="mt-4 text-lg font-semibold text-gray-900">Nenhum evento ativo</h3>
-            <p className="mt-1 text-gray-500">Volte mais tarde para novas inscrições.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {formLinks.map((link) => {
+            <div className="mt-8 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setActiveCenso(true)}
+                disabled={!settings.censusOpen}
+                className={`flex-1 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
+                  settings.censusOpen
+                    ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                    : "bg-gray-200 text-gray-500 cursor-not-allowed"
+                }`}
+              >
+                {settings.censusOpen ? "Abrir censo" : "Censo fechado"}
+                <ArrowRight className="h-4 w-4 opacity-70" />
+              </button>
+            </div>
+          </article>
+
+          {loading ? (
+            [1, 2].map((item) => (
+              <div
+                key={item}
+                className="h-64 rounded-3xl bg-gray-200/50 animate-pulse"
+              />
+            ))
+          ) : formLinks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-gray-300 bg-white p-12 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-50">
+                <FileText className="h-8 w-8 text-gray-400" />
+              </div>
+              <h3 className="mt-4 text-lg font-semibold text-gray-900">
+                Nenhum evento ativo
+              </h3>
+              <p className="mt-1 text-gray-500">
+                Volte mais tarde para novas inscrições.
+              </p>
+            </div>
+          ) : (
+            formLinks.map((link) => {
               const href = normalizeUrl(link.href);
               const title = link.text || "Formulário sem título";
 
@@ -157,18 +215,18 @@ export default function EventosPage() {
                 >
                   <div>
                     <div className="mb-4 flex items-center justify-between">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-md shadow-indigo-200">
-                            <FileText className="h-5 w-5" />
-                        </div>
-                        <div className="rounded-full bg-gray-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                            Google Forms
-                        </div>
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-md shadow-indigo-200">
+                        <FileText className="h-5 w-5" />
+                      </div>
+                      <div className="rounded-full bg-gray-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                        Google Forms
+                      </div>
                     </div>
-                    
+
                     <h3 className="line-clamp-2 text-xl font-bold text-gray-900 group-hover:text-indigo-600 transition-colors">
                       {title}
                     </h3>
-                    
+
                     <p className="mt-2 line-clamp-1 text-xs text-gray-400 font-mono">
                       {href}
                     </p>
@@ -183,7 +241,7 @@ export default function EventosPage() {
                       Inscrever-se
                       <ArrowRight className="h-4 w-4 opacity-70" />
                     </button>
-                    
+
                     <a
                       href={href || link.href}
                       target="_blank"
@@ -196,9 +254,9 @@ export default function EventosPage() {
                   </div>
                 </article>
               );
-            })}
-          </div>
-        )}
+            })
+          )}
+        </div>
       </div>
 
       {/* Modal / Overlay */}
@@ -271,6 +329,53 @@ export default function EventosPage() {
           </div>
         </div>
       )}
+
+      {activeCenso && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-sm transition-opacity"
+          onClick={() => setActiveCenso(false)}
+        >
+          <div
+            className="relative flex w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-gray-900/5 animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxHeight: "90vh" }}
+          >
+            <div className="flex items-center justify-between border-b border-gray-100 bg-white px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                  <UserPlus className="h-4 w-4" />
+                </div>
+                <h2 className="text-sm font-bold text-gray-900 truncate max-w-[200px] sm:max-w-md">
+                  {settings.censusTitle || "Censo de Membros"}
+                </h2>
+              </div>
+
+              <button
+                onClick={() => setActiveCenso(false)}
+                className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 bg-gray-50 overflow-y-auto">
+              <CensusFormSection variant="modal" />
+            </div>
+          </div>
+        </div>
+      )}
     </main>
+  );
+}
+
+export default function EventosPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-gray-50" aria-busy="true" />
+      }
+    >
+      <EventosPageContent />
+    </Suspense>
   );
 }

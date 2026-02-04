@@ -6,6 +6,7 @@ import BoardSection from "@/components/sections/institutional/BoardSection";
 import HistoryTimelineSection from "@/components/sections/institutional/HistoryTimelineSection";
 import PresidentMessageSection from "@/components/sections/institutional/PresidentMessageSection";
 import PresidencyAdvisorySection from "@/components/sections/institutional/PresidencyAdvisorySection";
+import EcclesiasticalBodySection from "@/components/sections/institutional/EcclesiasticalBodySection";
 import SectorsSection from "@/components/sections/institutional/SectorsSection";
 
 type TabItem = {
@@ -40,6 +41,11 @@ export default function InstitutionalTabsSection() {
         label:
           settings.institutionalAdvisoryTitle || "Assessorias da Presidência",
         content: <PresidencyAdvisorySection />,
+      },
+      {
+        id: "ecclesiastical",
+        label: "Corpo Eclesiástico",
+        content: <EcclesiasticalBodySection />,
       },
       {
         id: "sectors",
