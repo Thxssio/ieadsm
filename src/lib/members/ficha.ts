@@ -597,6 +597,13 @@ export const buildPrintDocument = (
               requestAnimationFrame(() => setTimeout(resolve, 60))
             );
 
+          const waitForStableRender = () =>
+            new Promise((resolve) =>
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => setTimeout(resolve, 120))
+              )
+            );
+
           const cleanup = () => {
             setDesktopMode(false);
             setToolbarHidden(false);
@@ -613,14 +620,17 @@ export const buildPrintDocument = (
                 return;
               }
               const renderScale = Math.min(
-                4,
-                Math.max(2, window.devicePixelRatio || 2)
+                5,
+                Math.max(3, (window.devicePixelRatio || 1) * 2)
               );
               const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "p" });
               for (let i = 0; i < elements.length; i += 1) {
                 const canvas = await html2canvasFn(elements[i], {
                   scale: renderScale,
                   useCORS: true,
+                  allowTaint: true,
+                  logging: false,
+                  imageTimeout: 3000,
                   backgroundColor: "#ffffff",
                 });
                 const imgData = canvas.toDataURL("image/png");
@@ -642,6 +652,7 @@ export const buildPrintDocument = (
             await waitForLayout();
             await waitForImages();
             await waitForFonts();
+            await waitForStableRender();
             await exportPdf();
             setTimeout(() => cleanup(), 300);
           };
@@ -652,6 +663,7 @@ export const buildPrintDocument = (
             await waitForLayout();
             await waitForImages();
             await waitForFonts();
+            await waitForStableRender();
             const finalize = () => cleanup();
             window.onafterprint = () => finalize();
             window.print();
@@ -699,6 +711,22 @@ export const buildPrintDocument = (
             }
           };
 
+          const setDesktopMode = (enabled = true) => {
+            document.body.classList.toggle("force-desktop", enabled);
+          };
+
+          const waitForLayout = () =>
+            new Promise((resolve) =>
+              requestAnimationFrame(() => setTimeout(resolve, 60))
+            );
+
+          const waitForStableRender = () =>
+            new Promise((resolve) =>
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => setTimeout(resolve, 120))
+              )
+            );
+
           const exportPdf = async () => {
             try {
               const elements = Array.from(document.querySelectorAll("${pageSelector}"));
@@ -710,14 +738,17 @@ export const buildPrintDocument = (
                 return;
               }
               const renderScale = Math.min(
-                4,
-                Math.max(2, window.devicePixelRatio || 2)
+                5,
+                Math.max(3, (window.devicePixelRatio || 1) * 2)
               );
               const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "p" });
               for (let i = 0; i < elements.length; i += 1) {
                 const canvas = await html2canvasFn(elements[i], {
                   scale: renderScale,
                   useCORS: true,
+                  allowTaint: true,
+                  logging: false,
+                  imageTimeout: 3000,
                   backgroundColor: "#ffffff",
                 });
                 const imgData = canvas.toDataURL("image/png");
@@ -740,7 +771,11 @@ export const buildPrintDocument = (
             printed = true;
             setDesktopMode(true);
             setTimeout(() => {
-              waitForLayout().then(exportPdf);
+              waitForLayout()
+                .then(waitForImages)
+                .then(waitForFonts)
+                .then(waitForStableRender)
+                .then(exportPdf);
             }, 80);
           };
         `
@@ -769,13 +804,23 @@ export const buildPrintDocument = (
               requestAnimationFrame(() => setTimeout(resolve, 60))
             );
 
+          const waitForStableRender = () =>
+            new Promise((resolve) =>
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => setTimeout(resolve, 120))
+              )
+            );
+
           let printed = false;
           const triggerPrint = () => {
             if (printed) return;
             printed = true;
             setDesktopMode(true);
             setTimeout(() => {
-              waitForLayout().then(() => window.print());
+              waitForLayout()
+                .then(waitForImages)
+                .then(waitForStableRender)
+                .then(() => window.print());
             }, 80);
           };
         `;

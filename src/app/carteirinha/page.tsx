@@ -59,7 +59,7 @@ export default function CarteirinhaPage() {
     try {
       const qrPayload = buildMemberQrPayload(memberData);
       const qrDataUrl = await QRCode.toDataURL(qrPayload, {
-        width: 360,
+        width: 504,
         margin: 1,
         errorCorrectionLevel: "L",
       });

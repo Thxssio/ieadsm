@@ -23,6 +23,16 @@ export type CardSettings = {
   presidentSignatureRole?: string;
 };
 
+const CARD_BASE_WIDTH_MM = 160;
+const CARD_BASE_HEIGHT_MM = 100;
+const CARD_TARGET_WIDTH_MM = 85.6;
+const CARD_TARGET_HEIGHT_MM = 53.98;
+const CARD_SCALE = CARD_TARGET_WIDTH_MM / CARD_BASE_WIDTH_MM;
+const CARD_OFFSET_Y_MM = Math.max(
+  0,
+  (CARD_TARGET_HEIGHT_MM - CARD_BASE_HEIGHT_MM * CARD_SCALE) / 2
+);
+
 const cargoLabels: Record<string, string> = {
   membro: "Membro",
   auxiliar: "Auxiliar",
@@ -224,6 +234,7 @@ export const buildCarteiraMarkup = (
   return `
       <div class="card-page">
         <div class="card-sheet">
+          <div class="card-wrap">
           <div class="card front">
           <div class="front-header">
             <div class="brand">
@@ -232,7 +243,7 @@ export const buildCarteiraMarkup = (
               </div>
               <div class="brand-text">
                 <span class="brand-name">Igreja Evangelica Assembleia de Deus</span>
-                <span class="brand-sub">SANTA MARIA</span>
+                <span class="brand-sub">SANTA MARIA - RIO GRANDE DO SUL</span>
               </div>
             </div>
             <div class="header-right">
@@ -275,7 +286,9 @@ export const buildCarteiraMarkup = (
             Documento Intransferível
           </div>
           </div>
+          </div>
 
+          <div class="card-wrap">
           <div class="card back">
           <div class="back-header">
             <div>
@@ -325,6 +338,7 @@ export const buildCarteiraMarkup = (
               </div>
               ${addressLine ? `<div class="address">${displayValue(addressLine)}</div>` : ""}
             </div>
+          </div>
           </div>
           </div>
         </div>
@@ -395,8 +409,12 @@ export const buildCarteiraDocument = (
             document.body.classList.toggle("force-desktop", enabled);
           };
 
-          const setExporting = (enabled = true) => {
+          const setExporting = (enabled = true, type = "print") => {
             document.body.classList.toggle("exporting", enabled);
+            document.body.classList.toggle(
+              "exporting-pdf",
+              enabled && type === "pdf"
+            );
             isExporting = enabled;
           };
 
@@ -454,6 +472,13 @@ export const buildCarteiraDocument = (
               requestAnimationFrame(() => setTimeout(resolve, 60))
             );
 
+          const waitForStableRender = () =>
+            new Promise((resolve) =>
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => setTimeout(resolve, 120))
+              )
+            );
+
           const cleanup = () => {
             if (!initialForceDesktop) {
               setDesktopMode(false);
@@ -470,8 +495,6 @@ export const buildCarteiraDocument = (
 
           const exportPdf = async () => {
             try {
-              const elements = Array.from(document.querySelectorAll("${pageSelector}"));
-              if (!elements.length) return;
               const { jsPDF } = window.jspdf || {};
               const html2canvasFn = window.html2canvas || window.html2canvasPro;
               if (!jsPDF || !html2canvasFn) {
@@ -479,14 +502,53 @@ export const buildCarteiraDocument = (
                 return;
               }
               const renderScale = Math.min(
-                4,
-                Math.max(2, window.devicePixelRatio || 2)
+                5,
+                Math.max(3, (window.devicePixelRatio || 1) * 2)
               );
               const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "p" });
+              const cards = Array.from(document.querySelectorAll(".card"));
+              if (cards.length) {
+                const cardWidth = ${CARD_TARGET_WIDTH_MM};
+                const cardHeight = ${CARD_TARGET_HEIGHT_MM};
+                const gap = 6;
+                const pageWidth = 210;
+                const pageHeight = 297;
+                const cardsPerPage = 2;
+                for (let i = 0; i < cards.length; i += 1) {
+                  const pageIndex = Math.floor(i / cardsPerPage);
+                  const slot = i % cardsPerPage;
+                  if (i > 0 && slot === 0) pdf.addPage();
+                  const remaining = cards.length - pageIndex * cardsPerPage;
+                  const cardsInPage = Math.min(cardsPerPage, remaining);
+                  const totalHeight =
+                    cardHeight * cardsInPage + gap * (cardsInPage - 1);
+                  const startY = Math.max(10, (pageHeight - totalHeight) / 2);
+                  const x = (pageWidth - cardWidth) / 2;
+                  const y = startY + slot * (cardHeight + gap);
+                const canvas = await html2canvasFn(cards[i], {
+                  scale: renderScale,
+                  useCORS: true,
+                  allowTaint: true,
+                  logging: false,
+                  imageTimeout: 3000,
+                  backgroundColor: "#ffffff",
+                });
+                  const imgData = canvas.toDataURL("image/png");
+                  pdf.addImage(imgData, "PNG", x, y, cardWidth, cardHeight);
+                }
+                pdf.save("${filename}.pdf");
+                return;
+              }
+
+              const elements = Array.from(document.querySelectorAll("${pageSelector}"));
+              if (!elements.length) return;
               for (let i = 0; i < elements.length; i += 1) {
                 const canvas = await html2canvasFn(elements[i], {
                   scale: renderScale,
                   useCORS: true,
+                  allowTaint: true,
+                  logging: false,
+                  imageTimeout: 3000,
                   backgroundColor: "#ffffff",
                 });
                 const imgData = canvas.toDataURL("image/png");
@@ -503,7 +565,7 @@ export const buildCarteiraDocument = (
           };
 
           const runDownload = async () => {
-            setExporting(true);
+            setExporting(true, "pdf");
             setDesktopMode(true);
             setDesktopScale(1);
             clearDesktopPageSize();
@@ -511,12 +573,13 @@ export const buildCarteiraDocument = (
             await waitForLayout();
             await waitForImages();
             await waitForFonts();
+            await waitForStableRender();
             await exportPdf();
             setTimeout(() => cleanup(), 300);
           };
 
           const runPrint = async () => {
-            setExporting(true);
+            setExporting(true, "print");
             setDesktopMode(true);
             setDesktopScale(1);
             clearDesktopPageSize();
@@ -524,6 +587,7 @@ export const buildCarteiraDocument = (
             await waitForLayout();
             await waitForImages();
             await waitForFonts();
+            await waitForStableRender();
             const finalize = () => cleanup();
             window.onafterprint = () => finalize();
             window.print();
@@ -588,8 +652,12 @@ export const buildCarteiraDocument = (
             document.body.classList.toggle("force-desktop", enabled);
           };
 
-          const setExporting = (enabled = true) => {
+          const setExporting = (enabled = true, type = "print") => {
             document.body.classList.toggle("exporting", enabled);
+            document.body.classList.toggle(
+              "exporting-pdf",
+              enabled && type === "pdf"
+            );
           };
 
           const waitForLayout = () =>
@@ -597,10 +665,15 @@ export const buildCarteiraDocument = (
               requestAnimationFrame(() => setTimeout(resolve, 60))
             );
 
+          const waitForStableRender = () =>
+            new Promise((resolve) =>
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => setTimeout(resolve, 120))
+              )
+            );
+
           const exportPdf = async () => {
             try {
-              const elements = Array.from(document.querySelectorAll("${pageSelector}"));
-              if (!elements.length) return;
               const { jsPDF } = window.jspdf || {};
               const html2canvasFn = window.html2canvas || window.html2canvasPro;
               if (!jsPDF || !html2canvasFn) {
@@ -608,14 +681,54 @@ export const buildCarteiraDocument = (
                 return;
               }
               const renderScale = Math.min(
-                4,
-                Math.max(2, window.devicePixelRatio || 2)
+                5,
+                Math.max(3, (window.devicePixelRatio || 1) * 2)
               );
               const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "p" });
+              const cards = Array.from(document.querySelectorAll(".card"));
+              if (cards.length) {
+                const cardWidth = ${CARD_TARGET_WIDTH_MM};
+                const cardHeight = ${CARD_TARGET_HEIGHT_MM};
+                const gap = 6;
+                const pageWidth = 210;
+                const pageHeight = 297;
+                const cardsPerPage = 2;
+                for (let i = 0; i < cards.length; i += 1) {
+                  const pageIndex = Math.floor(i / cardsPerPage);
+                  const slot = i % cardsPerPage;
+                  if (i > 0 && slot === 0) pdf.addPage();
+                  const remaining = cards.length - pageIndex * cardsPerPage;
+                  const cardsInPage = Math.min(cardsPerPage, remaining);
+                  const totalHeight =
+                    cardHeight * cardsInPage + gap * (cardsInPage - 1);
+                  const startY = Math.max(10, (pageHeight - totalHeight) / 2);
+                  const x = (pageWidth - cardWidth) / 2;
+                  const y = startY + slot * (cardHeight + gap);
+                  const canvas = await html2canvasFn(cards[i], {
+                    scale: renderScale,
+                    useCORS: true,
+                    allowTaint: true,
+                    logging: false,
+                    imageTimeout: 3000,
+                    backgroundColor: "#ffffff",
+                  });
+                  const imgData = canvas.toDataURL("image/png");
+                  pdf.addImage(imgData, "PNG", x, y, cardWidth, cardHeight);
+                }
+                pdf.save("${filename}.pdf");
+                setTimeout(() => window.close(), 100);
+                return;
+              }
+
+              const elements = Array.from(document.querySelectorAll("${pageSelector}"));
+              if (!elements.length) return;
               for (let i = 0; i < elements.length; i += 1) {
                 const canvas = await html2canvasFn(elements[i], {
                   scale: renderScale,
                   useCORS: true,
+                  allowTaint: true,
+                  logging: false,
+                  imageTimeout: 3000,
                   backgroundColor: "#ffffff",
                 });
                 const imgData = canvas.toDataURL("image/png");
@@ -633,10 +746,14 @@ export const buildCarteiraDocument = (
           };
 
           const triggerExport = () => {
-            setExporting(true);
+            setExporting(true, "pdf");
             setDesktopMode(true);
             setTimeout(() => {
-              waitForLayout().then(exportPdf);
+              waitForLayout()
+                .then(waitForImages)
+                .then(waitForFonts)
+                .then(waitForStableRender)
+                .then(exportPdf);
             }, 80);
           };
         `
@@ -660,8 +777,12 @@ export const buildCarteiraDocument = (
             document.body.classList.toggle("force-desktop", enabled);
           };
 
-          const setExporting = (enabled = true) => {
+          const setExporting = (enabled = true, type = "print") => {
             document.body.classList.toggle("exporting", enabled);
+            document.body.classList.toggle(
+              "exporting-pdf",
+              enabled && type === "pdf"
+            );
           };
 
           const waitForLayout = () =>
@@ -669,11 +790,21 @@ export const buildCarteiraDocument = (
               requestAnimationFrame(() => setTimeout(resolve, 60))
             );
 
+          const waitForStableRender = () =>
+            new Promise((resolve) =>
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => setTimeout(resolve, 120))
+              )
+            );
+
           const triggerPrint = () => {
-            setExporting(true);
+            setExporting(true, "print");
             setDesktopMode(true);
             setTimeout(() => {
-              waitForLayout().then(() => window.print());
+              waitForLayout()
+                .then(waitForImages)
+                .then(waitForStableRender)
+                .then(() => window.print());
             }, 80);
           };
         `;
@@ -716,8 +847,12 @@ export const buildCarteiraDocument = (
             --line: #e2e8f0;
             --page-width: 210mm;
             --page-height: 297mm;
-            --card-width: 160mm; 
-            --card-height: 100mm;
+            --card-base-width: ${CARD_BASE_WIDTH_MM}mm;
+            --card-base-height: ${CARD_BASE_HEIGHT_MM}mm;
+            --card-width: ${CARD_TARGET_WIDTH_MM}mm; 
+            --card-height: ${CARD_TARGET_HEIGHT_MM}mm;
+            --card-scale: ${CARD_SCALE};
+            --card-offset-y: ${CARD_OFFSET_Y_MM}mm;
           }
 
           * {
@@ -808,9 +943,19 @@ export const buildCarteiraDocument = (
             padding: 6mm 6mm 8mm;
             gap: 6mm;
           }
-          .card {
+          .card-wrap {
             width: var(--card-width);
             height: var(--card-height);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-start;
+          }
+
+          .card {
+            width: var(--card-base-width);
+            height: var(--card-base-height);
             border-radius: 18px;
             border: 1px solid var(--line);
             background: var(--paper);
@@ -818,6 +963,24 @@ export const buildCarteiraDocument = (
             overflow: hidden;
             box-shadow: 0 14px 32px rgba(15, 23, 42, 0.18);
             flex-shrink: 0;
+            transform: scale(var(--card-scale));
+            transform-origin: top left;
+            position: absolute;
+            top: var(--card-offset-y);
+            left: 0;
+          }
+
+          body.exporting-pdf .card-wrap {
+            width: var(--card-base-width);
+            height: var(--card-base-height);
+            overflow: visible;
+          }
+
+          body.exporting-pdf .card {
+            transform: none;
+            position: relative;
+            top: 0;
+            left: 0;
           }
 
           .card.front {
@@ -1032,7 +1195,7 @@ export const buildCarteiraDocument = (
             content: "";
             position: absolute;
             inset: 0;
-            background: linear-gradient(180deg, #0f172a 0%, #0f172a 32mm, #f8fafc 32mm, #f8fafc 100%);
+            background: linear-gradient(180deg, #0f172a 0%, #0f172a 32%, #f8fafc 32%, #f8fafc 100%);
             z-index: 0;
           }
 
@@ -1073,7 +1236,7 @@ export const buildCarteiraDocument = (
 
           .back-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr 30mm;
+            grid-template-columns: 1fr 1fr 42mm;
             gap: 3mm;
             background: #fff;
             border-radius: 10px;
@@ -1090,7 +1253,11 @@ export const buildCarteiraDocument = (
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
+            justify-content: flex-start;
+          }
+
+          body.force-desktop .grid-qr-area {
+            margin-top: -12mm;
           }
 
           .info-block {
@@ -1106,8 +1273,8 @@ export const buildCarteiraDocument = (
           }
           
           .qr-img {
-            width: 24mm;
-            height: 24mm;
+            width: 34mm;
+            height: 34mm;
             object-fit: contain;
             image-rendering: crisp-edges;
             image-rendering: pixelated;
@@ -1233,10 +1400,21 @@ export const buildCarteiraDocument = (
               gap: 18px;
             }
 
-            body:not(.force-desktop) .card {
+            body:not(.force-desktop) .card-wrap {
               width: min(420px, 92vw);
               height: auto;
-              min-height: var(--card-height);
+              min-height: var(--card-base-height);
+              overflow: visible;
+            }
+
+            body:not(.force-desktop) .card {
+              position: relative;
+              width: 100%;
+              height: auto;
+              min-height: var(--card-base-height);
+              transform: none;
+              top: 0;
+              left: 0;
             }
 
             body:not(.force-desktop) .front-header {
@@ -1280,7 +1458,7 @@ export const buildCarteiraDocument = (
           }
 
           @media (max-width: 520px) {
-            body:not(.force-desktop) .card {
+            body:not(.force-desktop) .card-wrap {
               width: 94vw;
             }
 

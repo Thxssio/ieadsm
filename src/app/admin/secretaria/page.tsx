@@ -144,6 +144,44 @@ const formatRegistro = (value?: string, other?: string) => {
 
 const normalizeCpf = (value?: string) => (value ?? "").replace(/\D/g, "");
 
+const formatCpf = (value?: string) => {
+  const normalized = normalizeCpf(value);
+  if (normalized.length === 0) return "";
+  if (normalized.length <= 3) return normalized;
+  if (normalized.length <= 6)
+    return `${normalized.slice(0, 3)}.${normalized.slice(3)}`;
+  if (normalized.length <= 9)
+    return `${normalized.slice(0, 3)}.${normalized.slice(
+      3,
+      6
+    )}.${normalized.slice(6)}`;
+  return `${normalized.slice(0, 3)}.${normalized.slice(
+    3,
+    6
+  )}.${normalized.slice(6, 9)}-${normalized.slice(9, 11)}`;
+};
+
+const normalizePhone = (value?: string) => (value ?? "").replace(/\D/g, "");
+
+const formatPhone = (value?: string) => {
+  let digits = normalizePhone(value);
+  if (digits.startsWith("55") && digits.length >= 12) {
+    digits = digits.slice(2);
+  }
+  if (!digits) return "";
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 8) {
+    return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  }
+  if (digits.length === 9) {
+    return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  }
+  if (digits.length <= 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
+};
+
 const cargoOptions = [
   { value: "membro", label: "Membro" },
   { value: "auxiliar", label: "Auxiliar" },
@@ -891,7 +929,7 @@ export default function SecretariaPage() {
   const handleOpenCarteira = async (member: CensusMember) => {
     try {
       const qrDataUrl = await QRCode.toDataURL(buildMemberQrPayload(member), {
-        width: 360,
+        width: 504,
         margin: 1,
       });
       const w = window.open("", "_blank");
@@ -1591,9 +1629,11 @@ export default function SecretariaPage() {
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-4 text-xs text-slate-500">
-                        {item.cpf ? <span>CPF: {item.cpf}</span> : null}
+                        {item.cpf ? (
+                          <span>CPF: {formatCpf(item.cpf)}</span>
+                        ) : null}
                         {item.celular ? (
-                          <span>Celular: {item.celular}</span>
+                          <span>Celular: {formatPhone(item.celular)}</span>
                         ) : null}
                         {item.createdAt ? (
                           <span>Enviado: {formatDate(item.createdAt)}</span>
@@ -1903,7 +1943,7 @@ export default function SecretariaPage() {
                     Identificação
                   </h4>
                   {renderDetail("Nome", activeMember.name)}
-                  {renderDetail("CPF", activeMember.cpf)}
+                  {renderDetail("CPF", formatCpf(activeMember.cpf))}
                   {renderDetail("RG", activeMember.rg)}
                   {renderDetail("Título de eleitor", activeMember.tituloEleitor)}
                   {renderDetail("ID interno", activeMember.idInterno)}
@@ -1920,8 +1960,8 @@ export default function SecretariaPage() {
                     Contato
                   </h4>
                   {renderDetail("Email", activeMember.email)}
-                  {renderDetail("Telefone", activeMember.telefone)}
-                  {renderDetail("Celular", activeMember.celular)}
+                  {renderDetail("Telefone", formatPhone(activeMember.telefone))}
+                  {renderDetail("Celular", formatPhone(activeMember.celular))}
                   {renderDetail("Endereço", activeMember.endereco)}
                   {renderDetail("Número", activeMember.numero)}
                   {renderDetail("Complemento", activeMember.complemento)}
@@ -1938,9 +1978,9 @@ export default function SecretariaPage() {
                     Filiação
                   </h4>
                   {renderDetail("Pai", activeMember.pai)}
-                  {renderDetail("CPF do pai", activeMember.cpfPai)}
+                  {renderDetail("CPF do pai", formatCpf(activeMember.cpfPai))}
                   {renderDetail("Mãe", activeMember.mae)}
-                  {renderDetail("CPF da mãe", activeMember.cpfMae)}
+                  {renderDetail("CPF da mãe", formatCpf(activeMember.cpfMae))}
                   {renderDetail(
                     "Órfão",
                     formatBool(activeMember.isOrphan),
@@ -1980,7 +2020,7 @@ export default function SecretariaPage() {
                     activeMember.qtdeFilhos
                   )}
                   {renderDetail("Nome do cônjuge", activeMember.nomeConjuge)}
-                  {renderDetail("CPF do cônjuge", activeMember.cpfConjuge)}
+                  {renderDetail("CPF do cônjuge", formatCpf(activeMember.cpfConjuge))}
                 </div>
                 <div className="space-y-2">
                   <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">

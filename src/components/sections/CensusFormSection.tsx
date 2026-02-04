@@ -686,7 +686,7 @@ export default function CensusFormSection({
     try {
       const qrPayload = buildMemberQrPayload(memberForCard);
       const qrDataUrl = await QRCode.toDataURL(qrPayload, {
-        width: 360,
+        width: 504,
         margin: 1,
         errorCorrectionLevel: "L",
       });
