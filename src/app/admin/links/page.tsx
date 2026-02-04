@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
+import { Link2 } from "lucide-react";
 import Image from "next/image";
 import {
   addDoc,
@@ -18,6 +19,7 @@ import { useAuth } from "@/components/providers/AuthProvider";
 import { useToast } from "@/components/ui/Toast";
 import { db, storage } from "@/lib/firebase/client";
 import { deleteStorageObject } from "@/lib/firebase/storageUtils";
+import { AdminHeader } from "@/components/admin/AdminHeader";
 
 type LinkDoc = {
   id: string;
@@ -72,6 +74,8 @@ export default function AdminLinksPage() {
   const [uploadError, setUploadError] = useState("");
   const [isDraggingIcon, setIsDraggingIcon] = useState(false);
   const [previousIcon, setPreviousIcon] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 5;
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
@@ -105,6 +109,22 @@ export default function AdminLinksPage() {
     () => form.text.trim().length > 0 && form.href.trim().length > 0,
     [form]
   );
+
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(items.length / pageSize)),
+    [items.length, pageSize]
+  );
+
+  const paginatedItems = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return items.slice(start, start + pageSize);
+  }, [items, page, pageSize]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
   const isRemoteIcon = /^https?:\/\//i.test(form.icon);
   const iconSelectValue = isRemoteIcon
     ? form.icon
@@ -267,24 +287,14 @@ export default function AdminLinksPage() {
   }
 
   return (
-    <main className="min-h-screen pb-20 bg-slate-50">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-10">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Links</h1>
-            <p className="text-slate-500">
-              Gerencie os links exibidos na página de links.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => router.push("/admin")}
-            className="inline-flex items-center text-blue-600 font-bold hover:text-blue-800 transition-colors bg-white px-6 py-3 rounded-full shadow-sm hover:shadow-md"
-          >
-            Voltar ao painel
-          </button>
-        </div>
-
+    <div className="min-h-screen bg-slate-50 pb-20 font-sans text-slate-900">
+      <AdminHeader
+        title="Links"
+        subtitle="Gerencie os links exibidos na página de links."
+        icon={<Link2 className="w-6 h-6" />}
+        right={<span>{items.length} links</span>}
+      />
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {!db ? (
           <div className="bg-white border border-slate-100 rounded-3xl p-8 shadow-sm">
             <p className="text-slate-500">
@@ -490,7 +500,7 @@ export default function AdminLinksPage() {
                 <p className="text-slate-500">Nenhum link cadastrado.</p>
               ) : (
                 <div className="space-y-4">
-                  {items.map((item) => (
+                  {paginatedItems.map((item) => (
                     <div
                       key={item.id}
                       className="border border-slate-100 rounded-2xl p-4 flex gap-4 items-start"
@@ -540,10 +550,35 @@ export default function AdminLinksPage() {
                   ))}
                 </div>
               )}
+              {!loading && items.length > pageSize ? (
+                <div className="mt-6 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                    disabled={page === 1}
+                    className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Anterior
+                  </button>
+                  <span className="text-xs text-slate-500">
+                    Página {page} de {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPage((prev) => Math.min(totalPages, prev + 1))
+                    }
+                    disabled={page === totalPages}
+                    className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Próxima
+                  </button>
+                </div>
+              ) : null}
             </section>
           </div>
         )}
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }

@@ -9,6 +9,7 @@ import {
   type FormEvent,
 } from "react";
 import { useRouter } from "next/navigation";
+import { ClipboardList } from "lucide-react";
 import Image from "next/image";
 import QRCode from "qrcode";
 import {
@@ -26,6 +27,7 @@ import { useCongregations } from "@/lib/firebase/useCongregations";
 import { useDepartments } from "@/lib/firebase/useDepartments";
 import { db, storage } from "@/lib/firebase/client";
 import { deleteStorageObject, deleteStorageObjects } from "@/lib/firebase/storageUtils";
+import { AdminHeader } from "@/components/admin/AdminHeader";
 
 const DEFAULT_PHOTO = "/logo.png";
 const LABEL_W_MM = 60;
@@ -116,6 +118,8 @@ export default function AdminPatrimonioPage() {
   const [filterDepartment, setFilterDepartment] = useState("");
   const [filterSector, setFilterSector] = useState("");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 5;
   const listRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -158,6 +162,34 @@ export default function AdminPatrimonioPage() {
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b));
   }, [congregations]);
+
+  const congregationSectorMap = useMemo(() => {
+    return new Map(
+      congregations
+        .filter((item) => item.name)
+        .map((item) => [item.name, item.sector])
+    );
+  }, [congregations]);
+
+  const formCongregationOptions = useMemo(() => {
+    const sector = form.sector?.trim();
+    const list = sector
+      ? congregations
+          .filter((item) => item.sector === sector)
+          .map((item) => item.name)
+      : congregationOptions;
+    return list.filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }, [congregations, congregationOptions, form.sector]);
+
+  const filterCongregationOptions = useMemo(() => {
+    const sector = filterSector?.trim();
+    const list = sector
+      ? congregations
+          .filter((item) => item.sector === sector)
+          .map((item) => item.name)
+      : congregationOptions;
+    return list.filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }, [congregations, congregationOptions, filterSector]);
 
   const sectorOptions = useMemo(() => {
     return Array.from(
@@ -440,6 +472,26 @@ export default function AdminPatrimonioPage() {
       return true;
     });
   }, [sortedItems, filterCongregation, filterDepartment, filterSector, search]);
+
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredItems.length / pageSize)),
+    [filteredItems.length, pageSize]
+  );
+
+  const paginatedItems = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredItems.slice(start, start + pageSize);
+  }, [filteredItems, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filterCongregation, filterDepartment, filterSector, search]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const selectedItems = useMemo(() => {
     if (!selectedIds.length) return [];
@@ -997,24 +1049,14 @@ export default function AdminPatrimonioPage() {
   }
 
   return (
-    <main className="min-h-screen pb-20 bg-slate-50">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-10">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Patrimônio</h1>
-            <p className="text-slate-500">
-              Cadastre itens com setor, congregação e fotos.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => router.push("/admin")}
-            className="inline-flex items-center text-blue-600 font-bold hover:text-blue-800 transition-colors bg-white px-6 py-3 rounded-full shadow-sm hover:shadow-md"
-          >
-            Voltar ao painel
-          </button>
-        </div>
-
+    <div className="min-h-screen bg-slate-50 pb-20 font-sans text-slate-900">
+      <AdminHeader
+        title="Patrimônio"
+        subtitle="Cadastre itens com setor, congregação e fotos."
+        icon={<ClipboardList className="w-6 h-6" />}
+        right={<span>{items.length} itens</span>}
+      />
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {!db ? (
           <div className="bg-white border border-slate-100 rounded-3xl p-8 shadow-sm">
             <p className="text-slate-500">
@@ -1081,9 +1123,26 @@ export default function AdminPatrimonioPage() {
                       type="text"
                       list="sector-options"
                       value={form.sector}
-                      onChange={(event) =>
-                        setForm((prev) => ({ ...prev, sector: event.target.value }))
-                      }
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setForm((prev) => {
+                          const currentCongregation = prev.congregation;
+                          const currentSector = currentCongregation
+                            ? congregationSectorMap.get(currentCongregation)
+                            : "";
+                          const keepCongregation =
+                            !currentCongregation ||
+                            !value ||
+                            currentSector === value;
+                          return {
+                            ...prev,
+                            sector: value,
+                            congregation: keepCongregation
+                              ? currentCongregation
+                              : "",
+                          };
+                        });
+                      }}
                       className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
                       placeholder="Ex.: SETOR 01 | MATRIZ"
                     />
@@ -1160,7 +1219,7 @@ export default function AdminPatrimonioPage() {
                       placeholder="Ex.: Cong. Matriz"
                     />
                     <datalist id="congregation-options">
-                      {congregationOptions.map((option) => (
+                      {formCongregationOptions.map((option) => (
                         <option key={option} value={option} />
                       ))}
                     </datalist>
@@ -1350,11 +1409,18 @@ export default function AdminPatrimonioPage() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <select
                       value={filterCongregation}
-                      onChange={(event) => setFilterCongregation(event.target.value)}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setFilterCongregation(value);
+                        if (value) {
+                          const sector = congregationSectorMap.get(value);
+                          if (sector) setFilterSector(sector);
+                        }
+                      }}
                       className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm"
                     >
                       <option value="">Todas as congregações</option>
-                      {congregationOptions.map((option) => (
+                      {filterCongregationOptions.map((option) => (
                         <option key={option} value={option}>
                           {option}
                         </option>
@@ -1374,7 +1440,18 @@ export default function AdminPatrimonioPage() {
                     </select>
                     <select
                       value={filterSector}
-                      onChange={(event) => setFilterSector(event.target.value)}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setFilterSector(value);
+                        if (filterCongregation) {
+                          const sector = congregationSectorMap.get(
+                            filterCongregation
+                          );
+                          if (sector && sector !== value) {
+                            setFilterCongregation("");
+                          }
+                        }
+                      }}
                       className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm"
                     >
                       <option value="">Todos os setores</option>
@@ -1499,7 +1576,7 @@ export default function AdminPatrimonioPage() {
                 <p className="text-slate-500">Nenhum patrimônio cadastrado.</p>
               ) : (
                 <div ref={listRef} className="space-y-4">
-                  {filteredItems.map((item) => {
+                  {paginatedItems.map((item) => {
                     const preview = safePhoto(item.photos?.[0]) || DEFAULT_PHOTO;
                     return (
                       <div
@@ -1594,10 +1671,34 @@ export default function AdminPatrimonioPage() {
                   })}
                 </div>
               )}
+              {!loading && filteredItems.length > pageSize ? (
+                <div className="mt-6 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                    disabled={page === 1}
+                    className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Anterior
+                  </button>
+                  <span className="text-xs text-slate-500">
+                    Página {page} de {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPage((prev) => Math.min(totalPages, prev + 1))
+                    }
+                    disabled={page === totalPages}
+                    className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Próxima
+                  </button>
+                </div>
+              ) : null}
             </section>
           </div>
         )}
-      </div>
 
       {activeLabel ? (
         <div
@@ -1843,6 +1944,7 @@ export default function AdminPatrimonioPage() {
           </div>
         </div>
       ) : null}
-    </main>
+      </main>
+    </div>
   );
 }

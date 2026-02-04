@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { usePathname } from "next/navigation";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
+import ForcePasswordChangeModal from "@/components/ui/ForcePasswordChangeModal";
 
 const HIDE_SHELL_PREFIXES = ["/links", "/linktree"];
 
@@ -19,7 +20,12 @@ function ShellContent({ children }: { children: ReactNode }) {
     : "bg-slate-50";
 
   if (hideShell) {
-    return <>{children}</>;
+    return (
+      <>
+        <ForcePasswordChangeModal />
+        {children}
+      </>
+    );
   }
 
   const contentSpacing = isHome
@@ -28,6 +34,7 @@ function ShellContent({ children }: { children: ReactNode }) {
 
   return (
     <>
+      <ForcePasswordChangeModal />
       <Header />
       <div className={contentSpacing}>{children}</div>
       <Footer />

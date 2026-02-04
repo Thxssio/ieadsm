@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useToast } from "@/components/ui/Toast";
@@ -31,6 +31,7 @@ type UserRow = {
   createdAt?: string;
   lastSignIn?: string;
   providerData?: string[];
+  mustChangePassword?: boolean;
 };
 
 type PresenceRow = {
@@ -88,6 +89,8 @@ export default function AdminUsersPage() {
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [page, setPage] = useState(1);
+  const pageSize = 5;
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
@@ -137,6 +140,7 @@ export default function AdminUsersPage() {
     });
     return () => unsub();
   }, [isAuthenticated]);
+
 
   const isOnline = (uid: string) => {
     const entry = presence[uid];
@@ -256,6 +260,7 @@ export default function AdminUsersPage() {
     }
   };
 
+
   const toTimestamp = (value?: string) => {
     if (!value) return 0;
     const date = new Date(value);
@@ -279,6 +284,26 @@ export default function AdminUsersPage() {
       if (createdA !== createdB) return createdB - createdA;
       return a.uid.localeCompare(b.uid);
     });
+
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredUsers.length / pageSize)),
+    [filteredUsers.length, pageSize]
+  );
+
+  const paginatedUsers = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredUsers.slice(start, start + pageSize);
+  }, [filteredUsers, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const onlineCount = users.reduce((total, current) => {
     return total + (isOnline(current.uid) ? 1 : 0);
@@ -366,7 +391,7 @@ export default function AdminUsersPage() {
                 <>
                   {/* Mobile Cards */}
                   <div className="xl:hidden divide-y divide-gray-100">
-                    {filteredUsers.map((member) => (
+                    {paginatedUsers.map((member) => (
                       <div key={member.uid} className="p-4 space-y-3">
                         <div className="flex items-start justify-between gap-3">
                           <div>
@@ -385,6 +410,11 @@ export default function AdminUsersPage() {
                                   {getProviderIcon(p)}
                                 </span>
                               ))}
+                              {member.mustChangePassword ? (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-100">
+                                  Senha provisória
+                                </span>
+                              ) : null}
                               {!member.providerData?.length && (
                                 <span className="text-slate-400 text-xs">—</span>
                               )}
@@ -446,7 +476,7 @@ export default function AdminUsersPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
-                        {filteredUsers.map((member) => (
+                        {paginatedUsers.map((member) => (
                           <tr key={member.uid} className="hover:bg-gray-50/80 transition-colors group">
                             <td className="px-6 py-4">
                               <div className="space-y-2">
@@ -480,6 +510,11 @@ export default function AdminUsersPage() {
                                       {getProviderIcon(p)}
                                     </span>
                                   ))}
+                                  {member.mustChangePassword ? (
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-100">
+                                      Senha provisória
+                                    </span>
+                                  ) : null}
                                   {!member.providerData?.length && (
                                     <span className="text-slate-400 text-xs">—</span>
                                   )}
@@ -520,6 +555,31 @@ export default function AdminUsersPage() {
                       </tbody>
                     </table>
                   </div>
+                  {filteredUsers.length > pageSize ? (
+                    <div className="flex items-center justify-between border-t border-gray-100 px-4 py-3 text-sm">
+                      <button
+                        type="button"
+                        onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                        disabled={page === 1}
+                        className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Anterior
+                      </button>
+                      <span className="text-xs text-slate-500">
+                        Página {page} de {totalPages}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPage((prev) => Math.min(totalPages, prev + 1))
+                        }
+                        disabled={page === totalPages}
+                        className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Próxima
+                      </button>
+                    </div>
+                  ) : null}
                 </>
               )}
             </div>
@@ -629,6 +689,7 @@ export default function AdminUsersPage() {
           
         </div>
       </main>
+
     </div>
   );
 }

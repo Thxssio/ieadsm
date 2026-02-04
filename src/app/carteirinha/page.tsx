@@ -10,6 +10,7 @@ import {
   buildCarteiraDocument,
   buildCarteiraMarkup,
   buildMemberQrPayload,
+  resolveCarteiraTitle,
   resolvePhotoForCard,
   type CardMember,
   type PrintMode,
@@ -67,10 +68,15 @@ export default function CarteirinhaPage() {
         : memberData;
       const sheets = buildCarteiraMarkup(memberWithPhoto, qrDataUrl, settings);
       const mode: PrintMode = isSafari ? "download" : "print";
+      const carteiraTitle = resolveCarteiraTitle(memberData.cargo);
+      const title = memberData.name
+        ? `${carteiraTitle} • ${memberData.name}`
+        : carteiraTitle;
       const html = buildCarteiraDocument(sheets, {
         mode,
         filename: "carteira-membro",
         pageSelector: ".card-sheet",
+        title,
       });
       w.document.open();
       w.document.write(html);

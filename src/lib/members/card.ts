@@ -30,6 +30,7 @@ const cargoLabels: Record<string, string> = {
   presbitero: "Presbítero",
   evangelista: "Evangelista",
   pastor: "Pastor",
+  "pastor-presidente": "Pastor Presidente",
 };
 
 const escapeHtml = (input: string) =>
@@ -81,8 +82,26 @@ const formatDateShort = (value?: string) => {
   return value;
 };
 
+const normalizeCargoValue = (value?: string) => {
+  const raw = (value ?? "").trim().toLowerCase();
+  if (!raw) return "membro";
+  if (raw.includes("pastor") && raw.includes("presidente")) {
+    return "pastor-presidente";
+  }
+  if (raw.startsWith("pastor")) return "pastor";
+  if (raw.startsWith("evangel")) return "evangelista";
+  if (raw.startsWith("presb")) return "presbitero";
+  if (raw.startsWith("diac")) return "diacono";
+  if (raw.startsWith("aux")) return "auxiliar";
+  if (raw.startsWith("membro")) return "membro";
+  return raw.replace(/\s+/g, "-");
+};
+
 const formatCargo = (value?: string) =>
-  cargoLabels[value ?? ""] ?? cargoLabels.membro;
+  cargoLabels[normalizeCargoValue(value)] ?? cargoLabels.membro;
+
+export const resolveCarteiraTitle = (cargo?: string) =>
+  `Carteira de ${formatCargo(cargo)}`;
 
 const safePhoto = (photo?: string) => {
   if (!photo) return "";
@@ -177,6 +196,7 @@ export const buildCarteiraMarkup = (
   settings: CardSettings
 ) => {
   const idLabel = member.idInterno?.trim() || member.id || "N/D";
+  const carteiraTitle = resolveCarteiraTitle(member.cargo);
   const cargoLabel = formatCargo(member.cargo).toUpperCase();
   const issuedAt = new Date().toLocaleDateString("pt-BR");
   const memberSince = formatDate(member.createdAt) || "-";
@@ -215,7 +235,7 @@ export const buildCarteiraMarkup = (
               </div>
             </div>
             <div class="header-right">
-              <div class="card-title">Carteira de Membro</div>
+              <div class="card-title">${escapeHtml(carteiraTitle)}</div>
               <div class="card-chip">
                 <span></span><span></span><span></span>
               </div>
@@ -312,21 +332,140 @@ export const buildCarteiraMarkup = (
 
 export const buildCarteiraDocument = (
   sheets: string,
-  options?: { mode?: PrintMode; filename?: string; pageSelector?: string }
+  options?: {
+    mode?: PrintMode;
+    filename?: string;
+    pageSelector?: string;
+    toolbar?: boolean;
+    title?: string;
+  }
 ) => {
   const mode = options?.mode ?? "print";
   const filename = options?.filename ?? "carteira-membro";
   const pageSelector = options?.pageSelector ?? ".card-sheet";
-  const downloadScripts =
-    mode === "download"
-      ? `
+  const toolbar = options?.toolbar ?? false;
+  const toolbarTitle = options?.title ?? "Carteira de Membro";
+  const documentTitle = toolbarTitle;
+  const includePdfScripts = mode === "download" || toolbar;
+  const downloadScripts = includePdfScripts
+    ? `
         <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
       `
-      : "";
+    : "";
 
   const actionScript =
-    mode === "download"
+    toolbar
+      ? `
+          const waitForImages = () => {
+            const images = Array.from(document.images || []);
+            return Promise.all(
+              images.map(
+                (img) =>
+                  img.complete
+                    ? Promise.resolve()
+                    : new Promise((resolve) => {
+                        img.onload = resolve;
+                        img.onerror = resolve;
+                      })
+              )
+            );
+          };
+
+          const waitForFonts = async () => {
+            if (document.fonts && document.fonts.ready) {
+              try {
+                await document.fonts.ready;
+              } catch {
+                // ignore
+              }
+            }
+          };
+
+          const setDesktopMode = (enabled = true) => {
+            document.body.classList.toggle("force-desktop", enabled);
+          };
+
+          const setToolbarHidden = (hidden = true) => {
+            document.body.classList.toggle("hide-toolbar", hidden);
+          };
+
+          const waitForLayout = () =>
+            new Promise((resolve) =>
+              requestAnimationFrame(() => setTimeout(resolve, 60))
+            );
+
+          const cleanup = () => {
+            setDesktopMode(false);
+            setToolbarHidden(false);
+          };
+
+          const exportPdf = async () => {
+            try {
+              const elements = Array.from(document.querySelectorAll("${pageSelector}"));
+              if (!elements.length) return;
+              const { jsPDF } = window.jspdf || {};
+              if (!jsPDF || !window.html2canvas) {
+                window.print();
+                return;
+              }
+              const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "p" });
+              for (let i = 0; i < elements.length; i += 1) {
+                const canvas = await window.html2canvas(elements[i], {
+                  scale: 2,
+                  useCORS: true,
+                  backgroundColor: "#ffffff",
+                });
+                const imgData = canvas.toDataURL("image/jpeg", 0.92);
+                const imgWidth = 210;
+                const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                const offsetY = Math.max(0, (297 - imgHeight) / 2);
+                if (i > 0) pdf.addPage();
+                pdf.addImage(imgData, "JPEG", 0, offsetY, imgWidth, imgHeight);
+              }
+              pdf.save("${filename}.pdf");
+            } catch (err) {
+              window.print();
+            }
+          };
+
+          const runDownload = async () => {
+            setDesktopMode(true);
+            setToolbarHidden(true);
+            await waitForLayout();
+            await waitForImages();
+            await waitForFonts();
+            await exportPdf();
+            setTimeout(() => cleanup(), 300);
+          };
+
+          const runPrint = async () => {
+            setDesktopMode(true);
+            setToolbarHidden(true);
+            await waitForLayout();
+            await waitForImages();
+            await waitForFonts();
+            const finalize = () => cleanup();
+            window.onafterprint = () => finalize();
+            window.print();
+            setTimeout(() => finalize(), 2000);
+          };
+
+          const downloadBtn = document.getElementById("toolbar-download");
+          const printBtn = document.getElementById("toolbar-print");
+          const closeBtn = document.getElementById("toolbar-close");
+
+          if (downloadBtn) {
+            downloadBtn.addEventListener("click", () => runDownload());
+          }
+          if (printBtn) {
+            printBtn.addEventListener("click", () => runPrint());
+          }
+          if (closeBtn) {
+            closeBtn.addEventListener("click", () => window.close());
+          }
+        `
+      : mode === "download"
       ? `
           const waitForImages = () => {
             const images = Array.from(document.images || []);
@@ -383,7 +522,12 @@ export const buildCarteiraDocument = (
             }
           };
 
-          const triggerExport = () => setTimeout(() => exportPdf(), 150);
+          const triggerExport = () => {
+            setDesktopMode(true);
+            setTimeout(() => {
+              waitForLayout().then(exportPdf);
+            }, 80);
+          };
         `
       : `
           const waitForImages = () => {
@@ -401,10 +545,36 @@ export const buildCarteiraDocument = (
             );
           };
 
-          const triggerPrint = () => setTimeout(() => window.print(), 300);
+          const setDesktopMode = (enabled = true) => {
+            document.body.classList.toggle("force-desktop", enabled);
+          };
+
+          const waitForLayout = () =>
+            new Promise((resolve) =>
+              requestAnimationFrame(() => setTimeout(resolve, 60))
+            );
+
+          const triggerPrint = () => {
+            setDesktopMode(true);
+            setTimeout(() => {
+              waitForLayout().then(() => window.print());
+            }, 80);
+          };
         `;
 
   const triggerAction = mode === "download" ? "triggerExport" : "triggerPrint";
+  const toolbarMarkup = toolbar
+    ? `
+        <div class="toolbar">
+          <div class="toolbar-title">${escapeHtml(toolbarTitle)}</div>
+          <div class="toolbar-actions">
+            <button id="toolbar-print" type="button">Imprimir</button>
+            <button id="toolbar-download" type="button">Baixar PDF</button>
+            <button id="toolbar-close" type="button">Fechar</button>
+          </div>
+        </div>
+      `
+    : "";
 
   return `
     <!doctype html>
@@ -412,7 +582,7 @@ export const buildCarteiraDocument = (
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Carteira de Membro</title>
+        <title>${escapeHtml(documentTitle)}</title>
         <style>
           @import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap");
 
@@ -442,7 +612,14 @@ export const buildCarteiraDocument = (
             background: #e2e8f0;
             display: flex;
             justify-content: center;
+            align-items: center;
             min-height: 100vh;
+          }
+
+          body.has-toolbar {
+            flex-direction: column;
+            justify-content: flex-start;
+            padding: 16px 0 24px;
           }
 
           @page {
@@ -805,18 +982,159 @@ export const buildCarteiraDocument = (
               background: none; 
               display: block;
             }
+            .toolbar {
+              display: none !important;
+            }
             .card-sheet {
               margin: 0 auto;
               page-break-after: always;
             }
           }
+
+          .hide-toolbar .toolbar {
+            display: none !important;
+          }
+
+          .toolbar {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            width: min(210mm, 96vw);
+            margin: 0 auto 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            background: #0f172a;
+            color: #fff;
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            border-radius: 999px;
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.25);
+          }
+
+          .toolbar-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+          }
+
+          .toolbar button {
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            background: transparent;
+            color: #fff;
+            font-weight: 600;
+            font-size: 10px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            cursor: pointer;
+          }
+
+          .toolbar button:hover {
+            background: rgba(255, 255, 255, 0.12);
+          }
+
+          @media (max-width: 900px) {
+            body:not(.force-desktop) {
+              align-items: flex-start;
+              padding: 16px 0 24px;
+            }
+
+            body:not(.force-desktop) .toolbar {
+              width: min(420px, 92vw);
+              flex-wrap: wrap;
+              gap: 8px;
+            }
+
+            body:not(.force-desktop) .card-sheet {
+              width: 100%;
+              height: auto;
+              min-height: 0;
+              padding: 20px 12px;
+              gap: 18px;
+            }
+
+            body:not(.force-desktop) .card {
+              width: min(420px, 92vw);
+              height: auto;
+              min-height: var(--card-height);
+            }
+
+            body:not(.force-desktop) .front-header {
+              flex-direction: column;
+              align-items: flex-start;
+              gap: 6px;
+            }
+
+            body:not(.force-desktop) .header-right {
+              align-items: flex-start;
+            }
+
+            body:not(.force-desktop) .front-body {
+              grid-template-columns: 1fr;
+              padding-bottom: 10mm;
+            }
+
+            body:not(.force-desktop) .photo-box {
+              width: 45mm;
+              height: 58mm;
+              margin: 0 auto;
+            }
+
+            body:not(.force-desktop) .meta-grid {
+              grid-template-columns: 1fr;
+            }
+
+            body:not(.force-desktop) .back-header {
+              flex-direction: column;
+              gap: 3mm;
+            }
+
+            body:not(.force-desktop) .back-grid {
+              grid-template-columns: 1fr;
+            }
+
+            body:not(.force-desktop) .grid-qr-area {
+              grid-column: 1 / -1;
+              grid-row: auto;
+            }
+          }
+
+          @media (max-width: 520px) {
+            body:not(.force-desktop) .card {
+              width: 94vw;
+            }
+
+            body:not(.force-desktop) .front-header {
+              margin: 6mm 6mm 4mm;
+              padding: 2mm 3mm;
+            }
+
+            body:not(.force-desktop) .front-body {
+              padding: 0 6mm 6mm;
+            }
+
+            body:not(.force-desktop) .back-header {
+              padding: 6mm 6mm;
+            }
+
+            body:not(.force-desktop) .back-body {
+              padding: 4mm 6mm 8mm;
+            }
+          }
         </style>
         ${downloadScripts}
       </head>
-      <body>
+      <body class="${toolbar ? "has-toolbar" : ""}">
+        ${toolbarMarkup}
         ${sheets}
         <script>
           ${actionScript}
+          ${
+            toolbar
+              ? ""
+              : `
           window.onload = () => {
             const waitResources = async () => {
               if (typeof waitForImages === "function") {
@@ -832,6 +1150,8 @@ export const buildCarteiraDocument = (
             mode === "print"
               ? "window.onafterprint = () => setTimeout(() => window.close(), 50);"
               : ""
+          }
+          `
           }
         </script>
       </body>

@@ -20,6 +20,10 @@ const cormorant = Cormorant_Garamond({
 export const metadata: Metadata = {
   title: "IEADSM",
   description: "Igreja Evangélica Assembleia de Deus de Santa Maria",
+  metadataBase: new URL("https://adsantamariars.com.br"),
+  alternates: {
+    canonical: "https://adsantamariars.com.br",
+  },
   icons: {
     icon: "/icon.svg",
   },

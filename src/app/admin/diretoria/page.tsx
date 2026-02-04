@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
+import { ShieldCheck } from "lucide-react";
 import Image from "next/image";
 import {
   addDoc,
@@ -18,6 +19,7 @@ import { useAuth } from "@/components/providers/AuthProvider";
 import { useToast } from "@/components/ui/Toast";
 import { db, storage } from "@/lib/firebase/client";
 import { deleteStorageObject } from "@/lib/firebase/storageUtils";
+import { AdminHeader } from "@/components/admin/AdminHeader";
 
 type BoardMemberDoc = {
   id: string;
@@ -68,6 +70,8 @@ export default function AdminBoardPage() {
   const [uploadError, setUploadError] = useState("");
   const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
   const [previousPhoto, setPreviousPhoto] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 5;
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
@@ -101,6 +105,22 @@ export default function AdminBoardPage() {
     () => form.role.trim().length > 0 && form.name.trim().length > 0,
     [form]
   );
+
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(items.length / pageSize)),
+    [items.length, pageSize]
+  );
+
+  const paginatedItems = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return items.slice(start, start + pageSize);
+  }, [items, page, pageSize]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -262,26 +282,14 @@ export default function AdminBoardPage() {
   }
 
   return (
-    <main className="min-h-screen pb-20 bg-slate-50">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-10">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">
-              Diretoria Executiva
-            </h1>
-            <p className="text-slate-500">
-              Ajuste os membros exibidos na página institucional.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => router.push("/admin/configuracoes")}
-            className="inline-flex items-center text-blue-600 font-bold hover:text-blue-800 transition-colors bg-white px-6 py-3 rounded-full shadow-sm hover:shadow-md"
-          >
-            Voltar às configurações
-          </button>
-        </div>
-
+    <div className="min-h-screen bg-slate-50 pb-20 font-sans text-slate-900">
+      <AdminHeader
+        title="Diretoria Executiva"
+        subtitle="Ajuste os membros exibidos na página institucional."
+        icon={<ShieldCheck className="w-6 h-6" />}
+        right={<span>{items.length} membros</span>}
+      />
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {!db ? (
           <div className="bg-white border border-slate-100 rounded-3xl p-8 shadow-sm">
             <p className="text-slate-500">
@@ -464,7 +472,7 @@ export default function AdminBoardPage() {
                 </p>
               ) : (
                 <div className="space-y-4">
-                  {items.map((item) => (
+                  {paginatedItems.map((item) => (
                     <div
                       key={item.id}
                       className="border border-slate-100 rounded-2xl p-4 flex gap-4 items-start"
@@ -506,10 +514,35 @@ export default function AdminBoardPage() {
                   ))}
                 </div>
               )}
+              {!loading && items.length > pageSize ? (
+                <div className="mt-6 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                    disabled={page === 1}
+                    className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Anterior
+                  </button>
+                  <span className="text-xs text-slate-500">
+                    Página {page} de {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPage((prev) => Math.min(totalPages, prev + 1))
+                    }
+                    disabled={page === totalPages}
+                    className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Próxima
+                  </button>
+                </div>
+              ) : null}
             </section>
           </div>
         )}
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }

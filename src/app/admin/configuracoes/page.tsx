@@ -2,12 +2,14 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { Settings } from "lucide-react";
 import { doc, setDoc } from "firebase/firestore";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useToast } from "@/components/ui/Toast";
 import { db } from "@/lib/firebase/client";
 import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
 import { defaultSiteSettings, type SiteSettings } from "@/data/siteContent";
+import { AdminHeader } from "@/components/admin/AdminHeader";
 
 export default function AdminSettingsPage() {
   const router = useRouter();
@@ -71,22 +73,14 @@ export default function AdminSettingsPage() {
   }
 
   return (
-    <main className="min-h-screen pb-20 bg-slate-50">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-10">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Configurações</h1>
-            <p className="text-slate-500">Atualize os textos do site.</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => router.push("/admin")}
-            className="inline-flex items-center text-blue-600 font-bold hover:text-blue-800 transition-colors bg-white px-6 py-3 rounded-full shadow-sm hover:shadow-md"
-          >
-            Voltar ao painel
-          </button>
-        </div>
-
+    <div className="min-h-screen bg-slate-50 pb-20 font-sans text-slate-900">
+      <AdminHeader
+        title="Configurações"
+        subtitle="Atualize os textos do site."
+        icon={<Settings className="w-6 h-6" />}
+        right={<span>Ajustes do site</span>}
+      />
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
           <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
@@ -717,7 +711,7 @@ export default function AdminSettingsPage() {
             </button>
           </div>
         </form>
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }

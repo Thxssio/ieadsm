@@ -1,6 +1,13 @@
 "use client";
 
-import { useMemo, useRef, useState, type FormEvent, type RefObject } from "react";
+import {
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+  type RefObject,
+} from "react";
 import {
   addDoc,
   collection,
@@ -96,6 +103,7 @@ type CensusFormState = {
   naturalidade: string;
   estadoCivil: string;
   dtCasamento: string;
+  certidaoCasamento: string;
   qtdeFilhos: string;
   nomeConjuge: string;
   profissaoConjuge: string;
@@ -160,6 +168,7 @@ const createEmptyForm = (): CensusFormState => ({
   naturalidade: "",
   estadoCivil: "",
   dtCasamento: "",
+  certidaoCasamento: "",
   qtdeFilhos: "",
   nomeConjuge: "",
   profissaoConjuge: "",
@@ -275,15 +284,25 @@ const mapRecordToForm = (
     (typeof rest.cpf === "string" && rest.cpf.trim()) ||
     (typeof cpfNormalized === "string" && cpfNormalized.trim()) ||
     fallbackCpf;
+  const certidaoCasamento =
+    typeof rest.certidaoCasamento === "string" ? rest.certidaoCasamento : "";
+
+  const registroTipo =
+    typeof rest.registroTipo === "string" && rest.registroTipo.trim()
+      ? rest.registroTipo
+      : "Atualização";
+  const registroTipoOutro =
+    typeof rest.registroTipoOutro === "string" ? rest.registroTipoOutro : "";
 
   return {
     ...base,
     ...rest,
+    certidaoCasamento,
     qtdeFilhos: qtdeFilhosValue,
     filhos: filhosNormalized,
     cpf: cpfValue,
-    registroTipo: "Atualização",
-    registroTipoOutro: "",
+    registroTipo,
+    registroTipoOutro,
     autorizacao: false,
     idInterno: typeof rest.idInterno === "string" ? rest.idInterno : "",
     sexo:
@@ -319,8 +338,12 @@ export default function CensusFormSection({
   const paiRef = useRef<HTMLInputElement>(null);
   const maeRef = useRef<HTMLInputElement>(null);
   const autorizacaoRef = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const certidaoInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [uploadingCertidao, setUploadingCertidao] = useState(false);
+  const [certidaoUploadError, setCertidaoUploadError] = useState("");
   const [cpfLookupStatus, setCpfLookupStatus] = useState<
     "idle" | "loading" | "found" | "not-found" | "error"
   >("idle");
@@ -380,6 +403,7 @@ export default function CensusFormSection({
     form.autorizacao;
 
   const isSolteiro = form.estadoCivil === "Solteiro(a)";
+  const isCasado = form.estadoCivil === "Casado(a)";
   const qtdeFilhosCount = parseChildrenCount(form.qtdeFilhos);
 
   const updateChild = (index: number, key: keyof ChildInfo, value: string) => {
@@ -416,6 +440,67 @@ export default function CensusFormSection({
     } finally {
       setUploading(false);
     }
+  };
+
+  const handlePhotoChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    const file = files && files.length > 0 ? files[0] : undefined;
+    if (!file || file.size === 0) {
+      setUploading(false);
+      setUploadError("");
+      event.currentTarget.value = "";
+      return;
+    }
+    void uploadPhoto(file);
+    event.currentTarget.value = "";
+  };
+
+  const handlePhotoPick = () => {
+    photoInputRef.current?.click();
+  };
+
+  const uploadCertidaoCasamento = async (file: File) => {
+    if (!storage) {
+      setCertidaoUploadError("Storage não configurado.");
+      return;
+    }
+    setUploadingCertidao(true);
+    setCertidaoUploadError("");
+    const previous = form.certidaoCasamento;
+    try {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+      const fileRef = ref(
+        storage,
+        `uploads/census/certidao-casamento/${Date.now()}-${safeName}`
+      );
+      await uploadBytes(fileRef, file, { contentType: file.type });
+      const url = await getDownloadURL(fileRef);
+      setForm((prev) => ({ ...prev, certidaoCasamento: url }));
+      if (previous && previous !== url) {
+        await deleteStorageObject(previous);
+      }
+    } catch (err) {
+      setCertidaoUploadError("Falha ao enviar a certidão. Tente novamente.");
+    } finally {
+      setUploadingCertidao(false);
+    }
+  };
+
+  const handleCertidaoChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    const file = files && files.length > 0 ? files[0] : undefined;
+    if (!file || file.size === 0) {
+      setUploadingCertidao(false);
+      setCertidaoUploadError("");
+      event.currentTarget.value = "";
+      return;
+    }
+    void uploadCertidaoCasamento(file);
+    event.currentTarget.value = "";
+  };
+
+  const handleCertidaoPick = () => {
+    certidaoInputRef.current?.click();
   };
 
   const getNextInternalId = async () => {
@@ -470,7 +555,6 @@ export default function CensusFormSection({
           const mapped = mapRecordToForm(data, prev.cpf || rawCpf);
           return {
             ...mapped,
-            registroTipo: prev.registroTipo, // Mantém o tipo de registro escolhido
             autorizacao: prev.autorizacao, // Mantém o status da autorização LGPD
           };
         });
@@ -494,6 +578,7 @@ export default function CensusFormSection({
     setSuccess(false);
     setSubmittedId("");
     setUploadError("");
+    setCertidaoUploadError("");
 
     const normalized = normalizeCpf(value);
     if (normalized !== lastCpfLookup) {
@@ -555,6 +640,7 @@ export default function CensusFormSection({
     setSuccess(false);
     setSubmittedId("");
     setUploadError("");
+    setCertidaoUploadError("");
 
     const normalized = value.replace(/\D/g, "");
     if (normalized !== lastCepLookup) {
@@ -632,23 +718,27 @@ export default function CensusFormSection({
     }
 
     if (!canSubmit) {
-      setError("Preencha os campos obrigatórios e aceite a LGPD.");
       if (!form.name.trim()) {
+        setError("Informe o nome completo.");
         focusField(nameRef);
         return;
       }
       if (!form.congregacao.trim()) {
+        setError("Informe a congregação.");
         focusField(congregacaoRef);
         return;
       }
       if (!form.setor.trim()) {
+        setError("Informe o setor.");
         focusField(setorRef);
         return;
       }
       if (!form.autorizacao) {
+        setError("Aceite a LGPD para enviar o formulário.");
         focusField(autorizacaoRef);
         return;
       }
+      setError("Preencha os campos obrigatórios.");
       return;
     }
 
@@ -733,6 +823,7 @@ export default function CensusFormSection({
       naturalidade: form.naturalidade.trim(),
       estadoCivil: form.estadoCivil.trim(),
       dtCasamento: isSolteiro ? "" : form.dtCasamento.trim(),
+      certidaoCasamento: isCasado ? form.certidaoCasamento.trim() : "",
       qtdeFilhos: form.qtdeFilhos.trim(),
       nomeConjuge: isSolteiro ? "" : form.nomeConjuge.trim(),
       profissaoConjuge: isSolteiro ? "" : form.profissaoConjuge.trim(),
@@ -1604,6 +1695,73 @@ export default function CensusFormSection({
                 ) : null}
               </div>
 
+              {isCasado ? (
+                <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700">
+                        Certidão de casamento
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Envie uma foto ou PDF da certidão de casamento.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <input
+                        id="censo-certidao-upload"
+                        type="file"
+                        accept="application/pdf,image/*"
+                        onChange={handleCertidaoChange}
+                        ref={certidaoInputRef}
+                        className="sr-only"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleCertidaoPick}
+                        className="inline-flex items-center justify-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 transition"
+                      >
+                        Enviar certidão
+                      </button>
+                      {form.certidaoCasamento ? (
+                        <>
+                          <a
+                            href={form.certidaoCasamento}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+                          >
+                            Ver certidão
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void deleteStorageObject(form.certidaoCasamento);
+                              setForm((prev) => ({
+                                ...prev,
+                                certidaoCasamento: "",
+                              }));
+                            }}
+                            className="text-xs font-semibold text-gray-500 hover:text-gray-700"
+                          >
+                            Remover
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                  {uploadingCertidao ? (
+                    <span className="mt-2 block text-xs text-gray-500">
+                      Enviando certidão...
+                    </span>
+                  ) : null}
+                  {certidaoUploadError ? (
+                    <span className="mt-2 block text-xs text-red-600">
+                      {certidaoUploadError}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1819,9 +1977,9 @@ export default function CensusFormSection({
               </div>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Origem
-                  </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Origem (Igreja de conversão)
+                </label>
                   <input
                     type="text"
                     value={form.origem}
@@ -2017,20 +2175,17 @@ export default function CensusFormSection({
                         id="censo-photo-upload"
                         type="file"
                         accept="image/*"
-                        onChange={(event) => {
-                          const file = event.target.files?.[0];
-                          if (file) {
-                            void uploadPhoto(file);
-                          }
-                        }}
+                        onChange={handlePhotoChange}
+                        ref={photoInputRef}
                         className="sr-only"
                       />
-                      <label
-                        htmlFor="censo-photo-upload"
-                        className="inline-flex items-center justify-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 transition cursor-pointer"
+                      <button
+                        type="button"
+                        onClick={handlePhotoPick}
+                        className="inline-flex items-center justify-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 transition"
                       >
                         Escolher foto
-                      </label>
+                      </button>
                       {form.photo ? (
                         <button
                           type="button"
@@ -2075,12 +2230,15 @@ export default function CensusFormSection({
             <div className="flex flex-wrap gap-3">
               <button
                 type="submit"
-                disabled={!canSubmit || saving}
+                disabled={saving}
+                aria-disabled={!canSubmit}
                 className={`rounded-xl px-6 py-3 text-sm font-semibold text-white transition ${
                   saving
                     ? "bg-indigo-400"
+                    : !canSubmit
+                    ? "bg-indigo-500/80 hover:bg-indigo-600"
                     : "bg-indigo-600 hover:bg-indigo-700"
-                } disabled:cursor-not-allowed disabled:opacity-70`}
+                } disabled:cursor-not-allowed`}
               >
                 {saving ? "Enviando..." : "Enviar censo"}
               </button>
