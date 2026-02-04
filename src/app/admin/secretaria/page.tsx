@@ -267,6 +267,14 @@ export default function SecretariaPage() {
     typeof navigator !== "undefined" &&
     /Safari/.test(navigator.userAgent) &&
     !/Chrome|Chromium|Edg|OPR|CriOS|FxiOS|Android/.test(navigator.userAgent);
+  const isSafariMobile = (() => {
+    if (!isSafari || typeof navigator === "undefined") return false;
+    const ua = navigator.userAgent;
+    const isIOS = /Mobile|iP(ad|hone|od)/.test(ua);
+    const isIPadDesktop =
+      navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+    return isIOS || isIPadDesktop;
+  })();
 
   // --- Auth & Data Fetching ---
   useEffect(() => {
@@ -883,7 +891,7 @@ export default function SecretariaPage() {
   const handleOpenCarteira = async (member: CensusMember) => {
     try {
       const qrDataUrl = await QRCode.toDataURL(buildMemberQrPayload(member), {
-        width: 240,
+        width: 360,
         margin: 1,
       });
       const w = window.open("", "_blank");
@@ -899,9 +907,11 @@ export default function SecretariaPage() {
         {
           mode: isSafari ? "download" : "print",
           filename: "carteira-membro",
-          pageSelector: ".card-sheet",
+          pageSelector: ".card-page",
           toolbar: true,
           title: fullTitle,
+          forceDesktop: true,
+          showPrintButton: !isSafariMobile,
         }
       );
       w.document.open();

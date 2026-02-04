@@ -46,20 +46,26 @@ export default function CarteirinhaPage() {
     typeof navigator !== "undefined" &&
     /Safari/.test(navigator.userAgent) &&
     !/Chrome|Chromium|Edg|OPR|CriOS|FxiOS|Android/.test(navigator.userAgent);
+  const isSafariMobile = (() => {
+    if (!isSafari || typeof navigator === "undefined") return false;
+    const ua = navigator.userAgent;
+    const isIOS = /Mobile|iP(ad|hone|od)/.test(ua);
+    const isIPadDesktop =
+      navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+    return isIOS || isIPadDesktop;
+  })();
 
   const openCard = async (memberData: CardMember) => {
     try {
       const qrPayload = buildMemberQrPayload(memberData);
       const qrDataUrl = await QRCode.toDataURL(qrPayload, {
-        width: 240,
+        width: 360,
         margin: 1,
         errorCorrectionLevel: "L",
       });
-      const w = window.open("", "_blank");
+      const w = window.open("", "_self");
       if (!w) {
-        setError(
-          "Não foi possível abrir a carteirinha. Libere os pop-ups e tente novamente."
-        );
+        setError("Não foi possível abrir a carteirinha. Tente novamente.");
         return;
       }
       const photoResolved = await resolvePhotoForCard(memberData.photo);
@@ -75,13 +81,15 @@ export default function CarteirinhaPage() {
       const html = buildCarteiraDocument(sheets, {
         mode,
         filename: "carteira-membro",
-        pageSelector: ".card-sheet",
+        pageSelector: ".card-page",
         title,
+        toolbar: true,
+        forceDesktop: true,
+        showPrintButton: !isSafariMobile,
       });
       w.document.open();
       w.document.write(html);
       w.document.close();
-      setNotice("Carteirinha gerada. Se não abriu, clique no botão abaixo.");
     } catch (err) {
       setError("Não foi possível gerar a carteirinha agora.");
     }

@@ -30,6 +30,7 @@ import {
   buildCarteiraDocument,
   buildCarteiraMarkup,
   buildMemberQrPayload,
+  resolveCarteiraTitle,
   resolvePhotoForCard,
   type PrintMode,
 } from "@/lib/members/card";
@@ -325,6 +326,7 @@ export default function CensusFormSection({
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [cardNotice, setCardNotice] = useState("");
   const [cardError, setCardError] = useState("");
   const [submittedId, setSubmittedId] = useState("");
@@ -360,6 +362,14 @@ export default function CensusFormSection({
     typeof navigator !== "undefined" &&
     /Safari/.test(navigator.userAgent) &&
     !/Chrome|Chromium|Edg|OPR|CriOS|FxiOS|Android/.test(navigator.userAgent);
+  const isSafariMobile = (() => {
+    if (!isSafari || typeof navigator === "undefined") return false;
+    const ua = navigator.userAgent;
+    const isIOS = /Mobile|iP(ad|hone|od)/.test(ua);
+    const isIPadDesktop =
+      navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+    return isIOS || isIPadDesktop;
+  })();
 
   const congregationOptions = useMemo(() => {
     const setorSelecionado = form.setor.trim();
@@ -660,6 +670,15 @@ export default function CensusFormSection({
     node.focus();
   };
 
+  const clearFieldError = (key: string) => {
+    setFieldErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
   const openMemberCard = async (
     memberForCard: CensusFormState & { createdAt?: string },
     targetWindow?: Window | null
@@ -667,7 +686,7 @@ export default function CensusFormSection({
     try {
       const qrPayload = buildMemberQrPayload(memberForCard);
       const qrDataUrl = await QRCode.toDataURL(qrPayload, {
-        width: 240,
+        width: 360,
         margin: 1,
         errorCorrectionLevel: "L",
       });
@@ -684,10 +703,18 @@ export default function CensusFormSection({
         : memberForCard;
       const sheets = buildCarteiraMarkup(memberWithPhoto, qrDataUrl, settings);
       const mode: PrintMode = isSafari ? "download" : "print";
+      const carteiraTitle = resolveCarteiraTitle(memberForCard.cargo);
+      const fullTitle = memberForCard.name
+        ? `${carteiraTitle} • ${memberForCard.name}`
+        : carteiraTitle;
       const html = buildCarteiraDocument(sheets, {
         mode,
         filename: "carteira-membro",
-        pageSelector: ".card-sheet",
+        pageSelector: ".card-page",
+        toolbar: true,
+        title: fullTitle,
+        forceDesktop: true,
+        showPrintButton: !isSafariMobile,
       });
       w.document.open();
       w.document.write(html);
@@ -717,44 +744,52 @@ export default function CensusFormSection({
       return;
     }
 
-    if (!canSubmit) {
-      if (!form.name.trim()) {
-        setError("Informe o nome completo.");
-        focusField(nameRef);
-        return;
-      }
-      if (!form.congregacao.trim()) {
-        setError("Informe a congregação.");
-        focusField(congregacaoRef);
-        return;
-      }
-      if (!form.setor.trim()) {
-        setError("Informe o setor.");
-        focusField(setorRef);
-        return;
-      }
-      if (!form.autorizacao) {
-        setError("Aceite a LGPD para enviar o formulário.");
-        focusField(autorizacaoRef);
-        return;
-      }
-      setError("Preencha os campos obrigatórios.");
-      return;
+    const nextErrors: Record<string, string> = {};
+    if (!form.name.trim()) {
+      nextErrors.name = "Informe o nome completo.";
     }
-
+    if (!form.congregacao.trim()) {
+      nextErrors.congregacao = "Informe a congregação.";
+    }
+    if (!form.setor.trim()) {
+      nextErrors.setor = "Informe o setor.";
+    }
+    if (!form.autorizacao) {
+      nextErrors.autorizacao = "Aceite a LGPD para enviar o formulário.";
+    }
     if (!form.isOrphan && !form.mae.trim()) {
-      setError("Informe o nome da mãe ou marque a opção de órfão.");
-      focusField(maeRef);
-      return;
+      nextErrors.mae = "Informe o nome da mãe ou marque a opção de órfão.";
     }
     if (!form.isOrphanFather && !form.pai.trim()) {
-      setError("Informe o nome do pai ou marque a opção de órfão.");
-      focusField(paiRef);
-      return;
+      nextErrors.pai = "Informe o nome do pai ou marque a opção de órfão.";
     }
     if (form.registroTipo === "Outros" && !form.registroTipoOutro.trim()) {
-      setError("Informe o tipo de registro em 'Outros'.");
-      focusField(registroTipoOutroRef);
+      nextErrors.registroTipoOutro =
+        "Informe o tipo de registro em 'Outros'.";
+    }
+
+    setFieldErrors(nextErrors);
+
+    if (Object.keys(nextErrors).length > 0) {
+      const focusOrder: Array<{
+        key: string;
+        ref: RefObject<HTMLElement | null>;
+      }> = [
+        { key: "name", ref: nameRef },
+        { key: "congregacao", ref: congregacaoRef },
+        { key: "setor", ref: setorRef },
+        { key: "autorizacao", ref: autorizacaoRef },
+        { key: "mae", ref: maeRef },
+        { key: "pai", ref: paiRef },
+        { key: "registroTipoOutro", ref: registroTipoOutroRef },
+      ];
+      const first = focusOrder.find((item) => nextErrors[item.key]);
+      if (first) {
+        setError(nextErrors[first.key]);
+        focusField(first.ref);
+      } else {
+        setError("Preencha os campos obrigatórios.");
+      }
       return;
     }
 
@@ -867,6 +902,7 @@ export default function CensusFormSection({
         await addDoc(collection(db, "censusMembers"), payload);
       }
       setForm(createEmptyForm());
+      setFieldErrors({});
       setCpfLookupStatus("idle");
       setCpfLookupError("");
       setLastCpfLookup("");
@@ -928,28 +964,57 @@ export default function CensusFormSection({
           <div className="mt-8 rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-gray-500">
             O formulário do censo está fechado no momento. Volte mais tarde.
           </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="mt-8 space-y-8">
-            {success ? (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                Formulário enviado com sucesso. Obrigado por contribuir!
-                {submittedId ? (
-                  <span className="block mt-1 font-semibold">
-                    ID interno: {submittedId}
-                  </span>
-                ) : null}
-                {lastSubmittedMember ? (
-                  <button
-                    type="button"
-                    onClick={() => openMemberCard(lastSubmittedMember)}
-                    className="mt-3 inline-flex items-center justify-center rounded-full border border-emerald-200 px-4 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition"
-                  >
-                    Abrir carteirinha
-                  </button>
-                ) : null}
+        ) : success ? (
+          <div className="mt-8 rounded-3xl border border-emerald-200 bg-emerald-50 px-6 py-8 text-center">
+            <p className="text-lg font-semibold text-emerald-800">
+              Obrigado por participar!
+            </p>
+            <p className="mt-2 text-sm text-emerald-700">
+              Seu cadastro foi enviado com sucesso.
+            </p>
+            {submittedId ? (
+              <p className="mt-3 text-xs font-semibold text-emerald-700">
+                ID interno: {submittedId}
+              </p>
+            ) : null}
+            {cardNotice ? (
+              <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                {cardNotice}
               </div>
             ) : null}
-
+            {cardError ? (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                {cardError}
+              </div>
+            ) : null}
+            {lastSubmittedMember ? (
+              <button
+                type="button"
+                onClick={() => openMemberCard(lastSubmittedMember)}
+                className="mt-4 inline-flex items-center justify-center rounded-full border border-emerald-200 px-4 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition"
+              >
+                Abrir carteirinha
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                setForm(createEmptyForm());
+                setError("");
+                setSuccess(false);
+                setFieldErrors({});
+                setCardNotice("");
+                setCardError("");
+                setSubmittedId("");
+                setLastSubmittedMember(null);
+              }}
+              className="mt-6 inline-flex items-center justify-center rounded-full border border-emerald-200 px-4 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition"
+            >
+              Enviar outro cadastro
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="mt-8 space-y-8">
             {cardNotice ? (
               <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
                 {cardNotice}
@@ -1026,16 +1091,17 @@ export default function CensusFormSection({
                   </label>
                   <select
                     value={form.registroTipo}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const value = event.target.value;
                       setForm((prev) => ({
                         ...prev,
-                        registroTipo: event.target.value,
-                        registroTipoOutro:
-                          event.target.value === "Outros"
-                            ? prev.registroTipoOutro
-                            : "",
-                      }))
-                    }
+                        registroTipo: value,
+                        registroTipoOutro: value === "Outros" ? prev.registroTipoOutro : "",
+                      }));
+                      if (value !== "Outros") {
+                        clearFieldError("registroTipoOutro");
+                      }
+                    }}
                     className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none disabled:bg-gray-100"
                   >
                     {registroOptions.map((option) => (
@@ -1054,16 +1120,29 @@ export default function CensusFormSection({
                       ref={registroTipoOutroRef}
                       type="text"
                       value={form.registroTipoOutro}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const value = event.target.value;
                         setForm((prev) => ({
                           ...prev,
-                          registroTipoOutro: event.target.value,
-                        }))
-                      }
-                      className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                          registroTipoOutro: value,
+                        }));
+                        if (value.trim()) {
+                          clearFieldError("registroTipoOutro");
+                        }
+                      }}
+                      className={`w-full rounded-xl border px-4 py-3 text-sm outline-none ${
+                        fieldErrors.registroTipoOutro
+                          ? "border-red-400 focus:border-red-500 focus:ring-4 focus:ring-red-100"
+                          : "border-gray-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                      }`}
                       placeholder="Descreva o tipo de registro"
                       required
                     />
+                    {fieldErrors.registroTipoOutro ? (
+                      <p className="mt-1 text-xs text-red-600">
+                        {fieldErrors.registroTipoOutro}
+                      </p>
+                    ) : null}
                   </div>
                 ) : null}
                 <div>
@@ -1101,8 +1180,15 @@ export default function CensusFormSection({
                         congregacao: value,
                         setor: match?.sector ?? prev.setor,
                       }));
+                      if (value.trim()) {
+                        clearFieldError("congregacao");
+                      }
                     }}
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none disabled:bg-gray-100"
+                    className={`w-full rounded-xl border px-4 py-3 text-sm outline-none disabled:bg-gray-100 ${
+                      fieldErrors.congregacao
+                        ? "border-red-400 focus:border-red-500 focus:ring-4 focus:ring-red-100"
+                        : "border-gray-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                    }`}
                     required
                   >
                     <option value="">Selecione</option>
@@ -1112,6 +1198,11 @@ export default function CensusFormSection({
                       </option>
                     ))}
                   </select>
+                  {fieldErrors.congregacao ? (
+                    <p className="mt-1 text-xs text-red-600">
+                      {fieldErrors.congregacao}
+                    </p>
+                  ) : null}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1137,8 +1228,15 @@ export default function CensusFormSection({
                           congregacao: validCongregation ? prev.congregacao : "",
                         };
                       });
+                      if (value.trim()) {
+                        clearFieldError("setor");
+                      }
                     }}
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                    className={`w-full rounded-xl border px-4 py-3 text-sm outline-none ${
+                      fieldErrors.setor
+                        ? "border-red-400 focus:border-red-500 focus:ring-4 focus:ring-red-100"
+                        : "border-gray-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                    }`}
                     required
                   >
                     <option value="">Selecione</option>
@@ -1148,6 +1246,11 @@ export default function CensusFormSection({
                       </option>
                     ))}
                   </select>
+                  {fieldErrors.setor ? (
+                    <p className="mt-1 text-xs text-red-600">
+                      {fieldErrors.setor}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </fieldset>
@@ -1165,13 +1268,26 @@ export default function CensusFormSection({
                     ref={nameRef}
                     type="text"
                     value={form.name}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, name: event.target.value }))
-                    }
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setForm((prev) => ({ ...prev, name: value }));
+                      if (value.trim()) {
+                        clearFieldError("name");
+                      }
+                    }}
+                    className={`w-full rounded-xl border px-4 py-3 text-sm outline-none ${
+                      fieldErrors.name
+                        ? "border-red-400 focus:border-red-500 focus:ring-4 focus:ring-red-100"
+                        : "border-gray-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                    }`}
                     placeholder="Nome completo"
                     required
                   />
+                  {fieldErrors.name ? (
+                    <p className="mt-1 text-xs text-red-600">
+                      {fieldErrors.name}
+                    </p>
+                  ) : null}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1424,12 +1540,25 @@ export default function CensusFormSection({
                     ref={paiRef}
                     type="text"
                     value={form.pai}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, pai: event.target.value }))
-                    }
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setForm((prev) => ({ ...prev, pai: value }));
+                      if (value.trim()) {
+                        clearFieldError("pai");
+                      }
+                    }}
                     disabled={form.isOrphanFather}
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none"
+                    className={`w-full rounded-xl border px-4 py-3 text-sm outline-none ${
+                      fieldErrors.pai
+                        ? "border-red-400 focus:border-red-500 focus:ring-4 focus:ring-red-100"
+                        : "border-gray-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                    }`}
                   />
+                  {fieldErrors.pai ? (
+                    <p className="mt-1 text-xs text-red-600">
+                      {fieldErrors.pai}
+                    </p>
+                  ) : null}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1459,12 +1588,25 @@ export default function CensusFormSection({
                     ref={maeRef}
                     type="text"
                     value={form.mae}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, mae: event.target.value }))
-                    }
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setForm((prev) => ({ ...prev, mae: value }));
+                      if (value.trim()) {
+                        clearFieldError("mae");
+                      }
+                    }}
                     disabled={form.isOrphan}
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 outline-none disabled:bg-gray-100"
+                    className={`w-full rounded-xl border px-4 py-3 text-sm outline-none disabled:bg-gray-100 ${
+                      fieldErrors.mae
+                        ? "border-red-400 focus:border-red-500 focus:ring-4 focus:ring-red-100"
+                        : "border-gray-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                    }`}
                   />
+                  {fieldErrors.mae ? (
+                    <p className="mt-1 text-xs text-red-600">
+                      {fieldErrors.mae}
+                    </p>
+                  ) : null}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1490,12 +1632,16 @@ export default function CensusFormSection({
                   <input
                     type="checkbox"
                     checked={form.isOrphanFather}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const checked = event.target.checked;
                       setForm((prev) => ({
                         ...prev,
-                        isOrphanFather: event.target.checked,
-                      }))
-                    }
+                        isOrphanFather: checked,
+                      }));
+                      if (checked) {
+                        clearFieldError("pai");
+                      }
+                    }}
                     className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                   />
                   Não possui pai registrado (órfão)
@@ -1504,12 +1650,16 @@ export default function CensusFormSection({
                   <input
                     type="checkbox"
                     checked={form.isOrphan}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const checked = event.target.checked;
                       setForm((prev) => ({
                         ...prev,
-                        isOrphan: event.target.checked,
-                      }))
-                    }
+                        isOrphan: checked,
+                      }));
+                      if (checked) {
+                        clearFieldError("mae");
+                      }
+                    }}
                     className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                   />
                   Não possui mãe registrada (órfão)
@@ -2122,22 +2272,39 @@ export default function CensusFormSection({
               <legend className="text-sm font-semibold uppercase tracking-wider text-gray-500">
                 LGPD
               </legend>
-              <label className="flex items-center gap-3 text-sm text-gray-600">
+              <label
+                className={`flex items-center gap-3 text-sm ${
+                  fieldErrors.autorizacao ? "text-red-600" : "text-gray-600"
+                }`}
+              >
                 <input
                   ref={autorizacaoRef}
                   type="checkbox"
                   checked={form.autorizacao}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const checked = event.target.checked;
                     setForm((prev) => ({
                       ...prev,
-                      autorizacao: event.target.checked,
-                    }))
-                  }
-                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      autorizacao: checked,
+                    }));
+                    if (checked) {
+                      clearFieldError("autorizacao");
+                    }
+                  }}
+                  className={`h-4 w-4 rounded border ${
+                    fieldErrors.autorizacao
+                      ? "border-red-400 text-red-600 focus:ring-red-500"
+                      : "border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  }`}
                   required
                 />
                 Autorizo o uso dos dados conforme a LGPD.
               </label>
+              {fieldErrors.autorizacao ? (
+                <p className="text-xs text-red-600">
+                  {fieldErrors.autorizacao}
+                </p>
+              ) : null}
             </fieldset>
 
             <fieldset className="space-y-4">
@@ -2248,6 +2415,7 @@ export default function CensusFormSection({
                   setForm(createEmptyForm());
                   setError("");
                   setSuccess(false);
+                  setFieldErrors({});
                 }}
                 className="rounded-xl border border-gray-200 px-6 py-3 text-sm font-semibold text-gray-600 hover:bg-gray-50"
               >

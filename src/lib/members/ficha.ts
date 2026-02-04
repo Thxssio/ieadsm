@@ -80,6 +80,7 @@ const escapeHtml = (input: string) =>
     .replaceAll("'", "&#039;");
 
 const normalizeCpf = (value?: string) => (value ?? "").replace(/\D/g, "");
+const normalizePhone = (value?: string) => (value ?? "").replace(/\D/g, "");
 
 const formatCpf = (value?: string) => {
   const normalized = normalizeCpf(value);
@@ -96,6 +97,25 @@ const formatCpf = (value?: string) => {
     3,
     6
   )}.${normalized.slice(6, 9)}-${normalized.slice(9, 11)}`;
+};
+
+const formatPhone = (value?: string) => {
+  let digits = normalizePhone(value);
+  if (digits.startsWith("55") && digits.length >= 12) {
+    digits = digits.slice(2);
+  }
+  if (!digits) return "";
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 8) {
+    return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  }
+  if (digits.length === 9) {
+    return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  }
+  if (digits.length <= 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
 };
 
 const formatDateForPrint = (value?: string) => {
@@ -119,6 +139,11 @@ const displayDateValue = (value?: string) => {
 
 const displayCpfValue = (value?: string) => {
   const formatted = formatCpf(value);
+  return formatted ? escapeHtml(formatted) : "&nbsp;";
+};
+
+const displayPhoneValue = (value?: string) => {
+  const formatted = formatPhone(value);
   return formatted ? escapeHtml(formatted) : "&nbsp;";
 };
 
@@ -336,7 +361,7 @@ export const buildFichaMarkup = (member: FichaMember, title?: string) => {
           </div>
           <div class="field col-3">
             <span class="label">Celular</span>
-            <div class="value">${displayValue(member.celular)}</div>
+            <div class="value">${displayPhoneValue(member.celular)}</div>
           </div>
         </div>
         <div class="row">
@@ -346,7 +371,7 @@ export const buildFichaMarkup = (member: FichaMember, title?: string) => {
           </div>
           <div class="field col-6">
             <span class="label">Telefone</span>
-            <div class="value">${displayValue(member.telefone)}</div>
+            <div class="value">${displayPhoneValue(member.telefone)}</div>
           </div>
         </div>
 
@@ -526,7 +551,7 @@ export const buildPrintDocument = (
   const includePdfScripts = mode === "download" || toolbar;
   const downloadScripts = includePdfScripts
     ? `
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/html2canvas-pro@1.6.6/dist/html2canvas-pro.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
       `
     : "";
@@ -582,23 +607,28 @@ export const buildPrintDocument = (
               const elements = Array.from(document.querySelectorAll("${pageSelector}"));
               if (!elements.length) return;
               const { jsPDF } = window.jspdf || {};
-              if (!jsPDF || !window.html2canvas) {
+              const html2canvasFn = window.html2canvas || window.html2canvasPro;
+              if (!jsPDF || !html2canvasFn) {
                 window.print();
                 return;
               }
+              const renderScale = Math.min(
+                4,
+                Math.max(2, window.devicePixelRatio || 2)
+              );
               const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "p" });
               for (let i = 0; i < elements.length; i += 1) {
-                const canvas = await window.html2canvas(elements[i], {
-                  scale: 2,
+                const canvas = await html2canvasFn(elements[i], {
+                  scale: renderScale,
                   useCORS: true,
                   backgroundColor: "#ffffff",
                 });
-                const imgData = canvas.toDataURL("image/jpeg", 0.92);
+                const imgData = canvas.toDataURL("image/png");
                 const imgWidth = 210;
                 const imgHeight = (canvas.height * imgWidth) / canvas.width;
                 const offsetY = Math.max(0, (297 - imgHeight) / 2);
                 if (i > 0) pdf.addPage();
-                pdf.addImage(imgData, "JPEG", 0, offsetY, imgWidth, imgHeight);
+                pdf.addImage(imgData, "PNG", 0, offsetY, imgWidth, imgHeight);
               }
               pdf.save("${filename}.pdf");
             } catch (err) {
@@ -674,23 +704,28 @@ export const buildPrintDocument = (
               const elements = Array.from(document.querySelectorAll("${pageSelector}"));
               if (!elements.length) return;
               const { jsPDF } = window.jspdf || {};
-              if (!jsPDF || !window.html2canvas) {
+              const html2canvasFn = window.html2canvas || window.html2canvasPro;
+              if (!jsPDF || !html2canvasFn) {
                 window.print();
                 return;
               }
+              const renderScale = Math.min(
+                4,
+                Math.max(2, window.devicePixelRatio || 2)
+              );
               const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "p" });
               for (let i = 0; i < elements.length; i += 1) {
-                const canvas = await window.html2canvas(elements[i], {
-                  scale: 2,
+                const canvas = await html2canvasFn(elements[i], {
+                  scale: renderScale,
                   useCORS: true,
                   backgroundColor: "#ffffff",
                 });
-                const imgData = canvas.toDataURL("image/jpeg", 0.92);
+                const imgData = canvas.toDataURL("image/png");
                 const imgWidth = 210;
                 const imgHeight = (canvas.height * imgWidth) / canvas.width;
                 const offsetY = Math.max(0, (297 - imgHeight) / 2);
                 if (i > 0) pdf.addPage();
-                pdf.addImage(imgData, "JPEG", 0, offsetY, imgWidth, imgHeight);
+                pdf.addImage(imgData, "PNG", 0, offsetY, imgWidth, imgHeight);
               }
               pdf.save("${filename}.pdf");
               setTimeout(() => window.close(), 100);
@@ -779,6 +814,13 @@ export const buildPrintDocument = (
             --muted: #6b7280;
             --line: #d1d5db;
             --panel: #f3f4f6;
+            --font-title: 16pt;
+            --font-subtitle: 8pt;
+            --font-section: 8pt;
+            --font-label: 7pt;
+            --font-value: 9pt;
+            --font-small: 8pt;
+            --font-table: 9pt;
           }
 
           * {
@@ -986,13 +1028,13 @@ export const buildPrintDocument = (
 
           .title {
             font-family: "Playfair Display", serif;
-            font-size: 16pt;
+            font-size: var(--font-title);
             letter-spacing: 0.08em;
             text-transform: uppercase;
           }
 
           .subtitle {
-            font-size: 8pt;
+            font-size: var(--font-subtitle);
             color: var(--muted);
             font-weight: 600;
             text-transform: uppercase;
@@ -1015,10 +1057,11 @@ export const buildPrintDocument = (
             width: 100%;
             height: 100%;
             object-fit: cover;
+            object-position: center;
           }
 
           .photo-placeholder {
-            font-size: 9pt;
+            font-size: var(--font-value);
             color: var(--muted);
             text-align: center;
             padding: 6px;
@@ -1031,7 +1074,7 @@ export const buildPrintDocument = (
             border: 1px solid var(--line);
             background: var(--panel);
             text-transform: uppercase;
-            font-size: 8pt;
+            font-size: var(--font-section);
             font-weight: 700;
             letter-spacing: 0.08em;
             color: #374151;
@@ -1061,7 +1104,7 @@ export const buildPrintDocument = (
           }
 
           .label {
-            font-size: 7pt;
+            font-size: var(--font-label);
             text-transform: uppercase;
             color: var(--muted);
             font-weight: 600;
@@ -1073,7 +1116,7 @@ export const buildPrintDocument = (
             border-radius: 4px;
             padding: 3px 5px;
             min-height: 16px;
-            font-size: 9pt;
+            font-size: var(--font-value);
             background: #fff;
           }
 
@@ -1087,7 +1130,7 @@ export const buildPrintDocument = (
             gap: 8px;
             align-items: center;
             flex-wrap: wrap;
-            font-size: 8pt;
+            font-size: var(--font-small);
           }
 
           .check {
@@ -1097,7 +1140,7 @@ export const buildPrintDocument = (
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            font-size: 8pt;
+            font-size: var(--font-small);
             font-weight: 700;
             margin-right: 4px;
           }
@@ -1105,7 +1148,7 @@ export const buildPrintDocument = (
           table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 8.5pt;
+            font-size: var(--font-table);
           }
 
           th, td {
@@ -1116,7 +1159,7 @@ export const buildPrintDocument = (
           th {
             background: #f9fafb;
             text-transform: uppercase;
-            font-size: 7.5pt;
+            font-size: var(--font-label);
             letter-spacing: 0.06em;
             color: var(--muted);
             text-align: left;
