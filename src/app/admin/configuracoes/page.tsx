@@ -385,7 +385,7 @@ export default function AdminSettingsPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
-                URL do mapa (embed)
+                URL do mapa (Sede principal)
               </label>
               <input
                 type="text"
@@ -397,12 +397,12 @@ export default function AdminSettingsPage() {
                 placeholder="https://www.google.com/maps/d/embed?mid=..."
               />
               <p className="text-xs text-slate-400 mt-2">
-                Cole aqui o link de embed do Google Maps para atualizar o mapa.
+                Link do Google Maps para a Sede principal.
               </p>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
-                URL do mapa (painel)
+                URL do mapa (Congregações - privado)
               </label>
               <input
                 type="text"
@@ -414,7 +414,24 @@ export default function AdminSettingsPage() {
                 placeholder="https://www.google.com/maps/d/embed?mid=..."
               />
               <p className="text-xs text-slate-400 mt-2">
-                Link privado usado apenas no painel administrativo.
+                Link do mapa privado com todas as congregações (uso interno).
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                URL do mapa (Congregações - público)
+              </label>
+              <input
+                type="text"
+                value={form.publicCongregationsMapEmbedUrl}
+                onChange={(event) =>
+                  handleChange("publicCongregationsMapEmbedUrl", event.target.value)
+                }
+                className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
+                placeholder="https://www.google.com/maps/d/embed?mid=..."
+              />
+              <p className="text-xs text-slate-400 mt-2">
+                Link do mapa público exibido em Setores e Congregações.
               </p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -499,6 +516,18 @@ export default function AdminSettingsPage() {
                   value={form.officePhone}
                   onChange={(event) => handleChange("officePhone", event.target.value)}
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={form.officeEmail}
+                  onChange={(event) => handleChange("officeEmail", event.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
+                  placeholder="contato@adsantamaria.com.br"
                 />
               </div>
               <div>

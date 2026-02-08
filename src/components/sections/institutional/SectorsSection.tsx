@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
 import {
@@ -91,6 +91,18 @@ const toList = (value?: string) =>
         .filter(Boolean)
     : [];
 
+const extractEmbedSrc = (value?: string) => {
+  const trimmed = (value || "").trim();
+  if (!trimmed) return "";
+  const match =
+    trimmed.match(/src=["']([^"']+)["']/i) ||
+    trimmed.match(/src=([^\\s>]+)/i);
+  return match ? match[1] : trimmed;
+};
+
+const isMyMaps = (url?: string) =>
+  !!url && (url.includes("/maps/d/") || url.includes("/maps/d/u/0/"));
+
 function formatCount(n: number) {
   return n === 1 ? "1 congregação" : `${n} congregações`;
 }
@@ -135,13 +147,22 @@ function ImageWithSkeleton({
 export default function SectorsSection() {
   const { settings } = useSiteSettings();
   const { items: congregations } = useCongregations();
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const pageChangeRef = useRef(false);
   const [activeCongregation, setActiveCongregation] = useState<Congregation | null>(
     null
   );
   const [canPortal, setCanPortal] = useState(false);
+  const [sectorPage, setSectorPage] = useState(1);
+  const sectorPageSize = 3;
 
   const title = settings.institutionalSectorsTitle || FALLBACK_TITLE;
   const content = settings.institutionalSectorsContent?.trim() || "";
+  const publicMapSrc = extractEmbedSrc(settings.publicCongregationsMapEmbedUrl);
+  const privateMapSrc = extractEmbedSrc(settings.adminMapEmbedUrl);
+  const legacyMapSrc = extractEmbedSrc(settings.mapEmbedUrl);
+  const congregationMapSrc =
+    publicMapSrc || privateMapSrc || (isMyMaps(legacyMapSrc) ? legacyMapSrc : "");
 
   const sectors = useMemo(() => {
     if (!congregations.length) return [] as Sector[];
@@ -177,6 +198,13 @@ export default function SectorsSection() {
     });
   }, [congregations]);
 
+  const totalPages = Math.max(1, Math.ceil(sectors.length / sectorPageSize));
+  const currentPage = Math.min(sectorPage, totalPages);
+  const pagedSectors = sectors.slice(
+    (currentPage - 1) * sectorPageSize,
+    currentPage * sectorPageSize
+  );
+
   // Mantive o fallback pronto caso tu queira usar no empty state depois
   const fallbackSectors = useMemo(() => parseSectors(content), [content]);
   void fallbackSectors; // evita warning caso você ainda não use
@@ -204,6 +232,15 @@ export default function SectorsSection() {
   }, []);
 
   useEffect(() => {
+    setSectorPage(1);
+  }, [sectors.length]);
+
+  useEffect(() => {
+    if (!pageChangeRef.current) return;
+    sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [sectorPage]);
+
+  useEffect(() => {
     if (!activeCongregation) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -215,7 +252,7 @@ export default function SectorsSection() {
   }, [activeCongregation]);
 
   return (
-    <section className="relative py-20">
+    <section ref={sectionRef} className="relative py-20">
 
       <div className="container mx-auto max-w-6xl px-4">
         {/* Cabeçalho */}
@@ -238,7 +275,7 @@ export default function SectorsSection() {
 
         {sectors.length > 0 ? (
           <div className="space-y-10">
-            {sectors.map((sector) => {
+            {pagedSectors.map((sector) => {
               const { code, name } = splitSectorLabel(sector.title);
               const countText = formatCount(sector.congregations.length);
 
@@ -368,6 +405,45 @@ export default function SectorsSection() {
                 </section>
               );
             })}
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm text-slate-600">
+                Página <span className="font-semibold text-slate-800">{currentPage}</span> de{" "}
+                <span className="font-semibold text-slate-800">{totalPages}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    pageChangeRef.current = true;
+                    setSectorPage((prev) => Math.max(1, prev - 1));
+                  }}
+                  disabled={currentPage === 1}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                    currentPage === 1
+                      ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                      : "bg-white border border-slate-200 text-slate-700 hover:border-slate-300"
+                  }`}
+                >
+                  Anterior
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    pageChangeRef.current = true;
+                    setSectorPage((prev) => Math.min(totalPages, prev + 1));
+                  }}
+                  disabled={currentPage === totalPages}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                    currentPage === totalPages
+                      ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                      : "bg-blue-600 text-white hover:bg-blue-700"
+                  }`}
+                >
+                  Próxima
+                </button>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="mx-auto flex max-w-xl flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white/80 p-10 text-center shadow-sm backdrop-blur">
@@ -382,6 +458,28 @@ export default function SectorsSection() {
             </p>
           </div>
         )}
+
+        {congregationMapSrc ? (
+          <div className="mt-10 rounded-3xl border border-slate-200/70 bg-white/70 shadow-sm backdrop-blur overflow-hidden">
+            <div className="flex items-center gap-2 px-6 py-4 border-b border-slate-100">
+              <MapPinned size={18} className="text-blue-700" />
+              <h3 className="text-base font-bold text-slate-900">
+                Mapa das Congregações
+              </h3>
+            </div>
+            <div className="aspect-[16/9] w-full">
+              <iframe
+                src={congregationMapSrc}
+                className="h-full w-full"
+                style={{ border: 0 }}
+                allowFullScreen
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+                title="Mapa das Congregações"
+              />
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {canPortal && activeCongregation

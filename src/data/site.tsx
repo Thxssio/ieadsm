@@ -38,7 +38,7 @@ export const LOGO_BLACK = "/dark.svg";
 export const LOGO_WHITE = "/light.svg";
 export const HERO_IMAGE_URL = "/capa.png";
 export const MAP_EMBED_URL =
-  "https://www.google.com/maps/d/embed?mid=1flrE81F-sZrBQPlVQa1FiWtzpOVutAY&ehbc=2E312F";
+  "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3466.1476142611236!2d-53.81129370000001!3d-29.686499700000002!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x9503cb428c84a02d%3A0x84aa41becb02a068!2sIgreja%20Evang%C3%A9lica%20Assembleia%20de%20Deus%20de%20Santa%20Maria%2FRS!5e0!3m2!1spt-BR!2sbr!4v1770526854995!5m2!1spt-BR!2sbr";
 
 export const historyTimeline: HistoryEvent[] = [
   {

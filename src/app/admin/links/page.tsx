@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Link2 } from "lucide-react";
 import Image from "next/image";
@@ -13,6 +13,7 @@ import {
   orderBy,
   query,
   updateDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { useAuth } from "@/components/providers/AuthProvider";
@@ -50,7 +51,6 @@ const ICON_OPTIONS = [
 const emptyForm = {
   text: "",
   href: "",
-  order: 10,
   icon: "",
 };
 
@@ -60,6 +60,24 @@ const safeIcon = (icon?: string) => {
   if (!icon.startsWith("/")) return "";
   return encodeURI(icon);
 };
+
+const sanitizeUrl = (url?: string) => {
+  const trimmed = (url || "").trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("/")) return trimmed;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+};
+
+const faviconFromUrl = (url?: string) => {
+  const safeUrl = sanitizeUrl(url);
+  if (!safeUrl) return "";
+  return `https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(
+    safeUrl
+  )}`;
+};
+
+const resolveIcon = (icon?: string, href?: string) =>
+  safeIcon(icon) || faviconFromUrl(href) || "/logo.png";
 
 export default function AdminLinksPage() {
   const router = useRouter();
@@ -76,6 +94,8 @@ export default function AdminLinksPage() {
   const [previousIcon, setPreviousIcon] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 5;
+  const isNormalizingRef = useRef(false);
+  const hasNormalizedRef = useRef(false);
 
   useEffect(() => {
     if (isReady && !isAuthenticated) {
@@ -84,20 +104,51 @@ export default function AdminLinksPage() {
   }, [isReady, isAuthenticated, router]);
 
   useEffect(() => {
-    if (!db) {
+    const firestore = db;
+    if (!firestore) {
       setLoading(false);
       return;
     }
-    const q = query(collection(db, "links"), orderBy("order"));
+    const q = query(collection(firestore, "links"), orderBy("order"));
     const unsub = onSnapshot(
       q,
       (snap) => {
-        setItems(
-          snap.docs.map((doc) => ({
-            id: doc.id,
-            ...(doc.data() as Omit<LinkDoc, "id">),
-          }))
-        );
+        const nextItems = snap.docs.map((doc) => ({
+          id: doc.id,
+          ...(doc.data() as Omit<LinkDoc, "id">),
+        }));
+        setItems(nextItems);
+        if (!hasNormalizedRef.current && !isNormalizingRef.current) {
+          const sorted = [...nextItems].sort(
+            (a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER)
+          );
+          const needsNormalize = sorted.some(
+            (item, index) => (item.order ?? 0) !== index + 1
+          );
+          if (needsNormalize) {
+            isNormalizingRef.current = true;
+            const batch = writeBatch(firestore);
+            sorted.forEach((item, index) => {
+              const nextOrder = index + 1;
+              if (item.order !== nextOrder) {
+                batch.update(doc(firestore, "links", item.id), { order: nextOrder });
+              }
+            });
+            batch
+              .commit()
+              .then(() => {
+                hasNormalizedRef.current = true;
+              })
+              .catch(() => {
+                hasNormalizedRef.current = false;
+              })
+              .finally(() => {
+                isNormalizingRef.current = false;
+              });
+          } else {
+            hasNormalizedRef.current = true;
+          }
+        }
         setLoading(false);
       },
       () => setLoading(false)
@@ -110,15 +161,25 @@ export default function AdminLinksPage() {
     [form]
   );
 
+  const orderedItems = useMemo(
+    () =>
+      [...items].sort(
+        (a, b) =>
+          (a.order ?? Number.MAX_SAFE_INTEGER) -
+          (b.order ?? Number.MAX_SAFE_INTEGER)
+      ),
+    [items]
+  );
+
   const totalPages = useMemo(
-    () => Math.max(1, Math.ceil(items.length / pageSize)),
-    [items.length, pageSize]
+    () => Math.max(1, Math.ceil(orderedItems.length / pageSize)),
+    [orderedItems.length, pageSize]
   );
 
   const paginatedItems = useMemo(() => {
     const start = (page - 1) * pageSize;
-    return items.slice(start, start + pageSize);
-  }, [items, page, pageSize]);
+    return orderedItems.slice(start, start + pageSize);
+  }, [orderedItems, page, pageSize]);
 
   useEffect(() => {
     if (page > totalPages) {
@@ -134,8 +195,9 @@ export default function AdminLinksPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!db || !canSubmit) {
-      if (!db) {
+    const firestore = db;
+    if (!firestore || !canSubmit) {
+      if (!firestore) {
         pushToast({
           type: "error",
           title: "Firebase não configurado",
@@ -146,24 +208,43 @@ export default function AdminLinksPage() {
     }
     const isEditing = Boolean(editingId);
     setSaving(true);
+    const existingOrder = editingId
+      ? items.find((item) => item.id === editingId)?.order ?? 0
+      : 0;
+    const order = isEditing ? existingOrder : 1;
     const payload: Omit<LinkDoc, "id"> = {
       text: form.text.trim(),
       href: form.href.trim(),
-      order: Number(form.order) || 0,
+      order,
       icon: form.icon.trim(),
     };
     try {
       if (editingId) {
-        await updateDoc(doc(db, "links", editingId), payload);
+        await updateDoc(doc(firestore, "links", editingId), payload);
         if (previousIcon && previousIcon !== form.icon) {
           await deleteStorageObject(previousIcon);
         }
       } else {
-        await addDoc(collection(db, "links"), payload);
+        const batch = writeBatch(firestore);
+        const orderedItems = [...items].sort(
+          (a, b) =>
+            (a.order ?? Number.MAX_SAFE_INTEGER) -
+            (b.order ?? Number.MAX_SAFE_INTEGER)
+        );
+        orderedItems.forEach((item, index) => {
+          const nextOrder = index + 2;
+          if (item.order !== nextOrder) {
+            batch.update(doc(firestore, "links", item.id), { order: nextOrder });
+          }
+        });
+        const newDocRef = doc(collection(firestore, "links"));
+        batch.set(newDocRef, payload);
+        await batch.commit();
       }
       setForm(emptyForm);
       setEditingId(null);
       setPreviousIcon("");
+      setPage(1);
       pushToast({
         type: "success",
         title: isEditing ? "Link atualizado" : "Link adicionado",
@@ -187,7 +268,6 @@ export default function AdminLinksPage() {
     setForm({
       text: item.text || "",
       href: item.href || "",
-      order: item.order ?? 10,
       icon: item.icon || "",
     });
   };
@@ -343,20 +423,11 @@ export default function AdminLinksPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Ordem
+                    Ordem (automática)
                   </label>
-                  <input
-                    type="number"
-                    value={form.order}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        order: Number(event.target.value),
-                      }))
-                    }
-                    className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
-                    min={0}
-                  />
+                  <div className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-500">
+                    O último link adicionado fica em primeiro na lista.
+                  </div>
                 </div>
 
                 <div>
@@ -372,9 +443,9 @@ export default function AdminLinksPage() {
                         uploading ? "animate-pulse" : ""
                       }`}
                     >
-                      {form.icon ? (
+                      {form.icon || form.href ? (
                         <Image
-                          src={safeIcon(form.icon) || "/logo.png"}
+                          src={resolveIcon(form.icon, form.href)}
                           alt=""
                           width={32}
                           height={32}
@@ -500,15 +571,17 @@ export default function AdminLinksPage() {
                 <p className="text-slate-500">Nenhum link cadastrado.</p>
               ) : (
                 <div className="space-y-4">
-                  {paginatedItems.map((item) => (
+                  {paginatedItems.map((item, index) => {
+                    const position = (page - 1) * pageSize + index + 1;
+                    return (
                     <div
                       key={item.id}
                       className="border border-slate-100 rounded-2xl p-4 flex gap-4 items-start"
                     >
                       <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden">
-                        {item.icon ? (
+                        {item.icon || item.href ? (
                           <Image
-                            src={safeIcon(item.icon) || "/logo.png"}
+                            src={resolveIcon(item.icon, item.href)}
                             alt=""
                             width={32}
                             height={32}
@@ -527,7 +600,7 @@ export default function AdminLinksPage() {
                           {item.href}
                         </p>
                         <p className="text-xs text-slate-400 mt-1">
-                          Ordem: {item.order ?? 0}
+                          Posição: {item.order ?? position}
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <button
@@ -547,7 +620,7 @@ export default function AdminLinksPage() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
               )}
               {!loading && items.length > pageSize ? (

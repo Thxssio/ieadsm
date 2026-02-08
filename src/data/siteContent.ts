@@ -23,6 +23,7 @@ export type SiteSettings = {
   mapDescription: string;
   mapEmbedUrl: string;
   adminMapEmbedUrl: string;
+  publicCongregationsMapEmbedUrl: string;
   locationTitle: string;
   locationAddress1: string;
   locationAddress2: string;
@@ -30,6 +31,7 @@ export type SiteSettings = {
   officeTitle: string;
   officeHours: string;
   officePhone: string;
+  officeEmail: string;
   pixKey: string;
   institutionalPresidentTitle: string;
   presidentVerseRef: string;
@@ -73,6 +75,7 @@ const EMPTY_SITE_SETTINGS: SiteSettings = {
   mapDescription: "",
   mapEmbedUrl: "",
   adminMapEmbedUrl: "",
+  publicCongregationsMapEmbedUrl: "",
   locationTitle: "",
   locationAddress1: "",
   locationAddress2: "",
@@ -80,6 +83,7 @@ const EMPTY_SITE_SETTINGS: SiteSettings = {
   officeTitle: "",
   officeHours: "",
   officePhone: "",
+  officeEmail: "",
   pixKey: "",
   institutionalPresidentTitle: "",
   presidentVerseRef: "",
@@ -127,6 +131,8 @@ export const seedSiteSettings: SiteSettings = {
   mapEmbedUrl: MAP_EMBED_URL,
   adminMapEmbedUrl:
     "https://www.google.com/maps/d/u/0/embed?mid=1rURiewtiWetlNdZPz8IziCAUJVFF35Q&ehbc=2E312F",
+  publicCongregationsMapEmbedUrl:
+    "https://www.google.com/maps/d/embed?mid=1flrE81F-sZrBQPlVQa1FiWtzpOVutAY&ehbc=2E312F",
   locationTitle: "Sede Principal",
   locationAddress1: "R. Venâncio Aires, 1504 - Centro",
   locationAddress2: "Santa Maria - RS",
@@ -134,6 +140,7 @@ export const seedSiteSettings: SiteSettings = {
   officeTitle: "Secretaria",
   officeHours: "Segunda a Sexta: 08:00 - 17:00",
   officePhone: "Tel: (55) 3221-5863",
+  officeEmail: "contato@adsantamaria.com.br",
   pixKey: "95629689/0001-24",
   institutionalPresidentTitle: "Palavra do Presidente",
   presidentVerseRef: "Atos 6:4",

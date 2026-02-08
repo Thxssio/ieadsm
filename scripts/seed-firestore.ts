@@ -104,7 +104,11 @@ const main = async () => {
   await seedCollection("serviceTimes", seedServiceTimes, (item) =>
     String((item as { order?: number }).order ?? item.id ?? Date.now())
   );
-  await seedCollection("links", seedLinks, (_, index) => `link-${index + 1}`);
+  await seedCollection(
+    "links",
+    seedLinks,
+    (item, index) => String(item.id ?? `link-${index + 1}`)
+  );
   await seedCollection("departments", seedDepartments, (item) =>
     String(item.id ?? Date.now())
   );

@@ -142,12 +142,25 @@ export default function AdminUsersPage() {
   }, [isAuthenticated]);
 
 
-  const isOnline = (uid: string) => {
+const isOnline = (uid: string) => {
+  const entry = presence[uid];
+  if (!entry?.lastSeen) return false;
+  const lastSeen = new Date(entry.lastSeen).getTime();
+  if (Number.isNaN(lastSeen)) return false;
+  return entry.state === "online" && Date.now() - lastSeen < 2 * 60 * 1000;
+};
+
+  const getLastSeenLabel = (uid: string, fallback?: string) => {
     const entry = presence[uid];
-    if (!entry?.lastSeen) return false;
-    const lastSeen = new Date(entry.lastSeen).getTime();
-    if (Number.isNaN(lastSeen)) return false;
-    return entry.state === "online" && Date.now() - lastSeen < 2 * 60 * 1000;
+    if (entry?.lastSeen) {
+      const lastSeenMs = new Date(entry.lastSeen).getTime();
+      if (!Number.isNaN(lastSeenMs)) {
+        const diff = Date.now() - lastSeenMs;
+        if (diff >= 0 && diff < 60 * 1000) return "Agora";
+      }
+      return formatDateTime(entry.lastSeen);
+    }
+    return formatDateTime(fallback);
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -528,7 +541,7 @@ export default function AdminUsersPage() {
                               </div>
                               <div className="flex items-center gap-2 text-slate-600 mt-2">
                                 <Calendar className="w-3 h-3 text-slate-400" />
-                                <span>Último login: {formatDateTime(member.lastSignIn)}</span>
+                                <span>Última vez online: {getLastSeenLabel(member.uid, member.lastSignIn)}</span>
                               </div>
                             </td>
                             <td className="px-6 py-4 text-right">

@@ -5,9 +5,25 @@ import Link from "next/link";
 import { MAP_EMBED_URL } from "@/data/site";
 import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
 
+const extractEmbedSrc = (value?: string) => {
+  const trimmed = (value || "").trim();
+  if (!trimmed) return "";
+  const match =
+    trimmed.match(/src=["']([^"']+)["']/i) ||
+    trimmed.match(/src=([^\\s>]+)/i);
+  return match ? match[1] : trimmed;
+};
+
+const isMyMaps = (url?: string) =>
+  !!url && (url.includes("/maps/d/") || url.includes("/maps/d/u/0/"));
+
 export default function MapSection() {
   const { settings } = useSiteSettings();
-  const embedUrl = settings.mapEmbedUrl?.trim() || MAP_EMBED_URL;
+  const headquartersSrc = extractEmbedSrc(settings.mapEmbedUrl);
+  const embedUrl =
+    headquartersSrc && !isMyMaps(headquartersSrc)
+      ? headquartersSrc
+      : MAP_EMBED_URL;
   return (
     <section
       id="contato"

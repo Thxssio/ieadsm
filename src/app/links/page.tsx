@@ -76,12 +76,12 @@ const SocialButton = ({ href, children }: { href: string; children: React.ReactN
 );
 
 /* ---------- Grupo Social ---------- */
-const SocialIcons = () => (
+const SocialIcons = ({ email }: { email: string }) => (
   <div className="flex gap-4 mt-6 justify-center">
     <SocialButton href="https://www.instagram.com/adsantamariars/">
       <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.85s-.011 3.584-.069 4.85c-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07s-3.584-.012-4.85-.07c-3.252-.148-4.771-1.691-4.919-4.919C2.174 15.584 2.163 15.204 2.163 12s.011-3.584.069-4.85c.149-3.225 1.664-4.771 4.919-4.919C8.416 2.175 8.796 2.163 12 2.163zM12 7.231a4.769 4.769 0 100 9.538 4.769 4.769 0 000-9.538zm6.448-.398a1.2 1.2 0 11-2.4 0 1.2 1.2 0 012.4 0z" /></svg>
     </SocialButton>
-    <SocialButton href="mailto:contato@adsantamaria.com.br">
+    <SocialButton href={`mailto:${email}`}>
       <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18a2 2 0 002 2h16a2 2 0 002-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" /></svg>
     </SocialButton>
     <SocialButton href="https://www.facebook.com/ADSantaMariaRS/">
@@ -111,6 +111,7 @@ export default function LinktreePage() {
   const [loading, setLoading] = useState(true);
   const [showToast, setShowToast] = useState(false);
   const { settings } = useSiteSettings();
+  const contactEmail = settings.officeEmail?.trim() || "contato@adsantamaria.com.br";
 
   useEffect(() => {
     setIsMounted(true);
@@ -145,14 +146,16 @@ export default function LinktreePage() {
       icon: "/logo.png",
       order: -10,
     };
-    const withCenso =
-      settings.censusOpen && !censoExists
-        ? [censoLink, ...baseLinks]
-        : baseLinks;
+    const sorted = [...baseLinks].sort(
+      (a, b) =>
+        (a.order ?? Number.MAX_SAFE_INTEGER) -
+        (b.order ?? Number.MAX_SAFE_INTEGER)
+    );
 
-    return [...withCenso]
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-      .map((link) => ({
+    const withCenso =
+      settings.censusOpen && !censoExists ? [censoLink, ...sorted] : sorted;
+
+    return withCenso.map((link) => ({
         ...link,
         href: sanitizeUrl(link.href),
         icon: safeIcon(link.icon) || faviconFromUrl(link.href) || autoIcon(),
@@ -256,7 +259,7 @@ export default function LinktreePage() {
             Igreja Evangélica Assembleia de Deus de Santa Maria/RS
           </p>
 
-          <SocialIcons />
+        <SocialIcons email={contactEmail} />
         </motion.header>
 
         {/* Lista de Links */}

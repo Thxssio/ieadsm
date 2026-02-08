@@ -19,6 +19,18 @@ import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
 
 const CONTACT_EMAIL = "contato@adsantamaria.com.br";
 
+const extractEmbedSrc = (value?: string) => {
+  const trimmed = (value || "").trim();
+  if (!trimmed) return "";
+  const match =
+    trimmed.match(/src=["']([^"']+)["']/i) ||
+    trimmed.match(/src=([^\\s>]+)/i);
+  return match ? match[1] : trimmed;
+};
+
+const isMyMaps = (url?: string) =>
+  !!url && (url.includes("/maps/d/") || url.includes("/maps/d/u/0/"));
+
 const sanitizeUrl = (url?: string) => {
   const trimmed = (url || "").trim();
   if (!trimmed) return "";
@@ -37,12 +49,17 @@ const whatsappFromPhone = (value?: string) => {
 
 export default function ContactPage() {
   const { settings } = useSiteSettings();
+  const contactEmail = settings.officeEmail?.trim() || CONTACT_EMAIL;
   const phoneDigits = normalizePhone(settings.officePhone);
   const whatsappDigits = whatsappFromPhone(settings.officePhone);
   const telHref = phoneDigits ? `tel:${phoneDigits}` : "";
   const whatsappHref = whatsappDigits ? `https://wa.me/${whatsappDigits}` : "";
 
-  const embedUrl = settings.mapEmbedUrl?.trim() || MAP_EMBED_URL;
+  const headquartersSrc = extractEmbedSrc(settings.mapEmbedUrl);
+  const embedUrl =
+    headquartersSrc && !isMyMaps(headquartersSrc)
+      ? headquartersSrc
+      : MAP_EMBED_URL;
 
   const addressLines = [
     settings.locationAddress1,
@@ -161,10 +178,10 @@ export default function ContactPage() {
                   Para assuntos gerais e documentos
                 </p>
                 <a
-                  href={`mailto:${CONTACT_EMAIL}`}
+                  href={`mailto:${contactEmail}`}
                   className="block text-slate-700 font-medium break-all hover:text-indigo-600 transition-colors"
                 >
-                  {CONTACT_EMAIL}
+                  {contactEmail}
                 </a>
               </div>
 

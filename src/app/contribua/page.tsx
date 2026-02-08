@@ -8,7 +8,7 @@ import { useSiteSettings } from "@/lib/firebase/useSiteSettings";
 const FALLBACK_PIX_KEY = "95629689/0001-24";
 const PIX_NAME = "IEADSM";
 const PIX_CITY = "SANTA MARIA";
-const PIX_TXID = "CONTRIBUICAO";
+const PIX_TXID = "DOADOPELOSITE";
 
 const formatAmount = (value: string) => {
   if (!value) return "";
